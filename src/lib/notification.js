@@ -60,8 +60,8 @@ export async function showBrowserNotification({ title, body, onClick = null }) {
    if (swRegistration) {
       await swRegistration.showNotification(title, {
          body,
-         icon: '/favicon.png',
-         badge: '/favicon.png',
+         icon: '/favicon.svg',
+         badge: '/favicon.svg',
          tag: 'chat-message',   // replace notif sebelumnya kalau belum diklik
          renotify: true,
       })

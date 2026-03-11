@@ -10,7 +10,7 @@
 	export let required = false;
 	export let autocomplete = '';
 
-	// Toggle password visibility
+	// Toggle password 
 	let showPassword = false;
 	$: inputType = type === 'password' ? (showPassword ? 'text' : 'password') : type;
 </script>

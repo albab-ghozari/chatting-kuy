@@ -77,6 +77,9 @@
 
 	// ── Handler pesan baru dari socket (global) ───────────────
 	function handleGlobalMessage(msg) {
+		console.log('📨 msg masuk:', msg);
+		console.log('🔔 isFromMe:', Number(msg.sender?.id) === Number(currentUser?.id));
+		console.log('🔔 isActiveConv:', Number(activeConversation?.id) === Number(msg.conversationId));
 		const convId = Number(msg.conversationId);
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);

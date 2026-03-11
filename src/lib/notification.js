@@ -64,6 +64,7 @@ export function showBrowserNotification({ title, body, icon = '/favicon.png', on
 
 // ── Trigger keduanya sekaligus ────────────────────────────
 export function notify({ senderName, message, avatar = null, onClickCb = null }) {
+    console.log('🔔 notify dipanggil:', senderName, message)
    // Toast selalu tampil
    showToast({
       title: senderName,

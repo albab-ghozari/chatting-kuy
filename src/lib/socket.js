@@ -12,10 +12,17 @@ async function getSocket() {
    if (!_socket) {
       const { io } = await import('socket.io-client')
       const SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? 'http://localhost:3000'
+      console.log('🔌 connecting socket to:', SOCKET_URL)
       _socket = io(SOCKET_URL, {
          autoConnect: false,
          transports: ['websocket', 'polling'],
       })
+      // ← tambah semua log ini
+      _socket.on('connect', () => console.log('✅ socket connected:', _socket.id))
+      _socket.on('disconnect', () => console.log('❌ socket disconnected'))
+      _socket.on('receive_message', (msg) => console.log('📨 receive_message RAW:', msg))
+      _socket.on('connect_error', (e) => console.log('❌ socket error:', e.message))
+
    }
 
    return _socket

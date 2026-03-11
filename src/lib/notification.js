@@ -60,14 +60,14 @@ export async function showBrowserNotification({ title, body, onClick = null }) {
    if (swRegistration) {
       await swRegistration.showNotification(title, {
          body,
-         icon: '/favicon.svg',
-         badge: '/favicon.svg',
+         icon: '/favicon.ico',
+         badge: '/favicon.ico',
          tag: 'chat-message',   // replace notif sebelumnya kalau belum diklik
          renotify: true,
       })
    } else {
       // Fallback untuk localhost
-      const notif = new Notification(title, { body, icon: '/favicon.svg' })
+      const notif = new Notification(title, { body, icon: '/favicon.ico' })
       if (onClick) notif.onclick = () => { window.focus(); onClick(); notif.close() }
       setTimeout(() => notif.close(), 5000)
    }

@@ -67,7 +67,7 @@ export async function showBrowserNotification({ title, body, onClick = null }) {
       })
    } else {
       // Fallback untuk localhost
-      const notif = new Notification(title, { body, icon: '/favicon.png' })
+      const notif = new Notification(title, { body, icon: '/favicon.svg' })
       if (onClick) notif.onclick = () => { window.focus(); onClick(); notif.close() }
       setTimeout(() => notif.close(), 5000)
    }

@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { notify, requestNotificationPermission } from '$lib/notification.js';
+	import { onSocketEvent, offSocketEvent } from '$lib/socket.js';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { authStore } from '$lib/stores/auth.js';
 	import { conversationApi, messageApi } from '$lib/api.js';
@@ -29,6 +30,7 @@
 	let searchingUsers = false;
 	let mobileView = 'sidebar';
 	let notifPermission = 'default';
+	let onlineUserIds = new Set(); // set userId yang sedang online
 
 	// ── Typing & Unread di sidebar ─────────────────────────
 	// { [conversationId]: true/false }
@@ -137,6 +139,13 @@
 		await onSocketEvent('typing', handleGlobalTyping);
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
 		await onSocketEvent('new_user', handleNewUser);
+		await onSocketEvent('user_online', ({ userId }) => {
+			onlineUserIds = new Set([...onlineUserIds, Number(userId)]);
+		});
+		await onSocketEvent('user_offline', ({ userId }) => {
+			onlineUserIds.delete(Number(userId));
+			onlineUserIds = new Set(onlineUserIds);
+		});
 	});
 
 	onDestroy(async () => {
@@ -144,6 +153,8 @@
 		await offSocketEvent('typing', handleGlobalTyping);
 		await offSocketEvent('stop_typing', handleGlobalStopTyping);
 		await offSocketEvent('new_user', handleNewUser);
+		await offSocketEvent('user_online');
+		await offSocketEvent('user_offline');
 		disconnectSocket();
 	});
 
@@ -514,6 +525,7 @@
 						active={activeConversation?.id === conv.id}
 						isTyping={sidebarTyping[Number(conv.id)] ?? false}
 						avatar={conv.otherAvatar ?? null}
+						online={onlineUserIds.has(Number(conv.otherUserId))}
 						on:click={() => selectConversation(conv)}
 					/>
 				{/each}
@@ -559,6 +571,7 @@
 				bind:this={chatWindow}
 				conversation={activeConversation}
 				currentUserId={currentUser?.id}
+				isOnline={onlineUserIds.has(Number(activeConversation?.otherUserId))}
 				on:send={handleSend}
 				on:newmessage={handleNewMessage}
 				on:requestmessages={handleRequestMessages}

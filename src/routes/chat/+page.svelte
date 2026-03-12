@@ -408,8 +408,26 @@
 								disabled={startingChat}
 								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50"
 							>
-								<Avatar name={u.username} size="sm" />
-								<span class="text-sm font-medium text-[#0d0f1e]">{u.username}</span>
+								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
+								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
+								{#if startingChat}
+									<!-- Spinner loading -->
+									<svg
+										class="h-4 w-4 shrink-0 animate-spin text-gray-400"
+										fill="none"
+										viewBox="0 0 24 24"
+									>
+										<circle
+											class="opacity-25"
+											cx="12"
+											cy="12"
+											r="10"
+											stroke="currentColor"
+											stroke-width="4"
+										/>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+									</svg>
+								{/if}
 							</button>
 						{/each}
 					</div>

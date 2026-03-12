@@ -42,7 +42,7 @@
 
 <div class="mx-auto flex w-full max-w-sm flex-col gap-6">
 	<div class="text-center">
-		<h1 class="text-2xl font-bold tracking-tight text-[#0d0f1e]">Welcome Back</h1>
+		<h1 class="text-2xl font-bold tracking-tight text-[#0d0f1e]">Welcome Back Chatting KUY</h1>
 	</div>
 
 	<div class="flex flex-col gap-3">

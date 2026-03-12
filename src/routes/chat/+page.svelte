@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { notify, requestNotificationPermission } from '$lib/notification.js';
-	import { onSocketEvent, offSocketEvent } from '$lib/socket.js';
+
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { authStore } from '$lib/stores/auth.js';
 	import { conversationApi, messageApi } from '$lib/api.js';

@@ -28,6 +28,7 @@
 	let allUsers = []; // cache semua user untuk instant search
 	let searchingUsers = false;
 	let mobileView = 'sidebar';
+	let notifPermission = 'default';
 
 	// ── Typing & Unread di sidebar ─────────────────────────
 	// { [conversationId]: true/false }
@@ -568,3 +569,4 @@
 	</main>
 </div>
 
+<ToastContainer />

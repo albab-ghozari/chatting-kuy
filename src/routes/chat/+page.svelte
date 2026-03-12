@@ -77,9 +77,6 @@
 
 	// ── Handler pesan baru dari socket (global) ───────────────
 	function handleGlobalMessage(msg) {
-		console.log('📨 msg masuk:', msg);
-		console.log('🔔 isFromMe:', Number(msg.sender?.id) === Number(currentUser?.id));
-		console.log('🔔 isActiveConv:', Number(activeConversation?.id) === Number(msg.conversationId));
 		const convId = Number(msg.conversationId);
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
@@ -96,8 +93,10 @@
 			};
 		});
 
-		// Notifikasi hanya kalau pesan dari orang lain & conversation tidak aktif
-		if (!isFromMe && !isActiveConv) {
+		// Notifikasi kalau pesan dari orang lain
+		// - Conversation tidak aktif → selalu tampilkan toast
+		// - Conversation aktif tapi tab tidak fokus → tetap tampilkan
+		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
 			const conv = conversations.find((c) => Number(c.id) === convId);
 			notify({
 				senderName: msg.sender?.username ?? 'Pesan baru',
@@ -112,7 +111,13 @@
 
 	onMount(async () => {
 		// Minta izin browser notification
-		await requestNotificationPermission();
+		notifPermission = Notification.permission;
+		if (Notification.permission === 'default') {
+			const granted = await requestNotificationPermission();
+			notifPermission = granted ? 'granted' : 'denied';
+		} else if (Notification.permission === 'granted') {
+			await requestNotificationPermission(); // register SW
+		}
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
@@ -287,23 +292,27 @@
 		}, 300);
 	}
 
+	let startingChat = false; // guard agar tidak double click
+
 	async function startChat(targetUser) {
+		if (startingChat) return; // cegah double call
+		startingChat = true;
 		try {
 			const conv = await conversationApi.create(targetUser.id);
 			await loadConversations();
 			showNewChat = false;
 			userSearchQuery = '';
 			userResults = [];
-			const found = conversations.find((c) => c.id === conv.id) ?? {
-				id: conv.id,
-				name: targetUser.username,
-				lastMessage: null,
+			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? {
+				...conv,
 				time: '',
 				unread: 0
 			};
 			await selectConversation(found);
 		} catch (e) {
 			console.error(e);
+		} finally {
+			startingChat = false;
 		}
 	}
 
@@ -395,7 +404,8 @@
 						{#each userResults as u (u.id)}
 							<button
 								on:click={() => startChat(u)}
-								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white"
+								disabled={startingChat}
+								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50"
 							>
 								<Avatar name={u.username} size="sm" />
 								<span class="text-sm font-medium text-[#0d0f1e]">{u.username}</span>

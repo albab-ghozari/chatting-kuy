@@ -14,6 +14,7 @@
 
 	export let conversation = null; // conversation sekarang include otherAvatar
 	export let currentUserId = null;
+	export let isOnline = false; // status online lawan bicara
 	let loading = false;
 
 	// messages dikelola sepenuhnya di sini — tidak dari prop
@@ -172,7 +173,9 @@
 			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="md" />
 			<div>
 				<p class="text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
-				<p class="text-xs text-gray-400">online</p>
+				<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
+					{isOnline ? '● online' : '○ offline'}
+				</p>
 			</div>
 			<div class="ml-auto">
 				<button

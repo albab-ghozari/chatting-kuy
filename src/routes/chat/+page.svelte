@@ -570,7 +570,16 @@
 					src={activeConversation.otherAvatar ?? null}
 					size="sm"
 				/>
-				<span class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</span>
+				<div>
+					<p class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
+					<p
+						class="text-xs {onlineUserIds.has(Number(activeConversation?.otherUserId))
+							? 'font-medium text-emerald-500'
+							: 'text-gray-400'}"
+					>
+						{onlineUserIds.has(Number(activeConversation?.otherUserId)) ? '● online' : '○ offline'}
+					</p>
+				</div>
 			</div>
 
 			<ChatWindow

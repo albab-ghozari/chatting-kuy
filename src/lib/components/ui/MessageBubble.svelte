@@ -19,7 +19,7 @@
 
 <div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}">
 	{#if !isOwn}
-		<Avatar name={message.sender.username} src={message.sender.avatar ?? null} size="sm" />
+		<!-- <Avatar name={message.sender.username} src={message.sender.avatar ?? null} size="sm" /> -->
 	{/if}
 
 	<div class="flex max-w-[75%] min-w-0 flex-col gap-1 {isOwn ? 'items-end' : 'items-start'}">
@@ -32,7 +32,7 @@
 		<div
 			class="
       w-full overflow-hidden rounded-2xl px-4 py-2.5
-      text-sm leading-relaxed break-words break-all whitespace-pre-wrap
+      text-sm leading-relaxed wrap-words break-all whitespace-pre-wrap
       {isOwn ? 'rounded-br-sm bg-[#0d0f1e] text-white' : 'rounded-bl-sm bg-gray-100 text-[#0d0f1e]'}
     "
 		>

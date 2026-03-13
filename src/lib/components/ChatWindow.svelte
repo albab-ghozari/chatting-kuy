@@ -243,12 +243,7 @@
 			<div class="typing-enter flex items-end gap-2">
 				<!-- Avatar lawan bicara -->
 				{#if conversation}
-					<Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" />
-					<div>
-						<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
-							{isOnline ? '● online' : '○ offline'}
-						</p>
-					</div>
+					<!-- <Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" /> -->
 				{/if}
 				<!-- Bubble titik-titik -->
 				<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">

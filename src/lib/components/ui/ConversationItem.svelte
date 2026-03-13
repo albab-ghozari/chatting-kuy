@@ -17,7 +17,7 @@
 	class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-all duration-150
          {active ? 'bg-[#0d0f1e] text-white' : 'text-[#0d0f1e] hover:bg-gray-100'}"
 >
-	<Avatar {name} {online} src={avatar} size="md" />
+	<Avatar {name} {online} src={avatar} />
 
 	<div class="min-w-0 flex-1">
 		<!-- Baris 1: nama + waktu -->

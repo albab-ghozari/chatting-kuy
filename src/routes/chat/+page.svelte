@@ -347,9 +347,9 @@
 	}
 </script>
 
-<svelte:head><title>Chat</title></svelte:head>
+<svelte:head><title>Chatting kuy</title></svelte:head>
 
-<div class="fixed inset-0 w-full flex bg-white overflow-hidden">
+<div class="fixed inset-0 flex w-full overflow-hidden bg-white">
 	<!-- SIDEBAR -->
 	<aside
 		class="

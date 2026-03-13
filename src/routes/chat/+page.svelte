@@ -152,6 +152,10 @@
 			onlineUserIds.delete(Number(userId));
 			onlineUserIds = new Set(onlineUserIds);
 		});
+		// Terima list semua user online saat pertama connect/reconnect
+		await onSocketEvent('online_users', ({ userIds }) => {
+			onlineUserIds = new Set(userIds.map(Number));
+		});
 	});
 
 	onDestroy(async () => {
@@ -161,6 +165,7 @@
 		await offSocketEvent('new_user', handleNewUser);
 		await offSocketEvent('user_online');
 		await offSocketEvent('user_offline');
+		await offSocketEvent('online_users');
 		disconnectSocket();
 	});
 

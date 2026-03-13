@@ -168,7 +168,7 @@
 	<!-- Header — desktop only -->
 	{#if conversation}
 		<div
-			class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4 md:flex"
+			class="flex shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4"
 		>
 			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} />
 			<div>

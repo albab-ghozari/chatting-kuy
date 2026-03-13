@@ -154,7 +154,8 @@
 		});
 		// Terima list semua user online saat pertama connect/reconnect
 		await onSocketEvent('online_users', ({ userIds }) => {
-			onlineUserIds = new Set(userIds.map(Number));
+			// Replace dengan data fresh dari server (ini sudah include semua yg online)
+			onlineUserIds = new Set([...onlineUserIds, ...userIds.map(Number)]);
 		});
 	});
 

@@ -113,13 +113,19 @@
 	}
 
 	onMount(async () => {
-		// Minta izin browser notification
-		notifPermission = Notification.permission;
-		if (Notification.permission === 'default') {
-			const granted = await requestNotificationPermission();
-			notifPermission = granted ? 'granted' : 'denied';
-		} else if (Notification.permission === 'granted') {
-			await requestNotificationPermission(); // register SW
+		// Minta izin browser notification (guard untuk Safari iPhone yang tidak support)
+		try {
+			if (typeof Notification !== 'undefined') {
+				notifPermission = Notification.permission;
+				if (Notification.permission === 'default') {
+					const granted = await requestNotificationPermission();
+					notifPermission = granted ? 'granted' : 'denied';
+				} else if (Notification.permission === 'granted') {
+					await requestNotificationPermission(); // register SW
+				}
+			}
+		} catch (e) {
+			console.log('Notification not supported:', e.message);
 		}
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');

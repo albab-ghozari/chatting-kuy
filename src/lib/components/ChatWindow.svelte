@@ -168,7 +168,7 @@
 	<!-- Header — desktop only -->
 	{#if conversation}
 		<div
-			class="flex shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4"
+			class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4 md:flex"
 		>
 			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} />
 			<div>
@@ -244,6 +244,12 @@
 				<!-- Avatar lawan bicara -->
 				{#if conversation}
 					<Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" />
+					<div>
+						<p class="text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
+						<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
+							{isOnline ? '● online' : '○ offline'}
+						</p>
+					</div>
 				{/if}
 				<!-- Bubble titik-titik -->
 				<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">

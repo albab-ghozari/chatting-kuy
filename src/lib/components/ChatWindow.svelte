@@ -170,7 +170,7 @@
 		<div
 			class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4 md:flex"
 		>
-			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="md" />
+			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} />
 			<div>
 				<p class="text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
 				<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">

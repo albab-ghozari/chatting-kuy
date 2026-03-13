@@ -245,7 +245,6 @@
 				{#if conversation}
 					<Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" />
 					<div>
-						<p class="text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
 						<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
 							{isOnline ? '● online' : '○ offline'}
 						</p>

@@ -13,10 +13,11 @@ async function getSocket() {
       console.log('🔌 connecting socket to:', SOCKET_URL)
       _socket = io(SOCKET_URL, {
          autoConnect: false,
-         transports: ['websocket', 'polling'],
+         transports: ['polling', 'websocket'],  // polling dulu agar Safari support
          reconnection: true,
          reconnectionAttempts: 10,
          reconnectionDelay: 1000,
+         upgrade: true,  // upgrade ke websocket kalau bisa
       })
 
       _socket.on('connect', () => {

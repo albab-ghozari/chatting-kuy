@@ -13,11 +13,13 @@ async function getSocket() {
       console.log('🔌 connecting socket to:', SOCKET_URL)
       _socket = io(SOCKET_URL, {
          autoConnect: false,
-         transports: ['polling', 'websocket'],  // polling dulu agar Safari support
+         transports: ['polling', 'websocket'],
          reconnection: true,
-         reconnectionAttempts: 10,
+         reconnectionAttempts: Infinity,
          reconnectionDelay: 1000,
-         upgrade: true,  // upgrade ke websocket kalau bisa
+         reconnectionDelayMax: 5000,
+         upgrade: true,
+         timeout: 20000,
       })
 
       _socket.on('connect', () => {
@@ -94,4 +96,10 @@ export async function emitMarkRead(conversationId, userId) {
    const s = await getSocket()
    if (!s) return
    s.emit('mark_read', { conversationId, userId })
+}
+
+/** Cek apakah socket sudah connected */
+export async function isSocketConnected() {
+   const s = await getSocket()
+   return s?.connected ?? false
 }

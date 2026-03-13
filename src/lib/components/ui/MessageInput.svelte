@@ -50,6 +50,7 @@
            text-sm leading-relaxed text-[#0d0f1e]
            placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 	></textarea>
+
 	<button
 		type="button"
 		{disabled}

@@ -20,7 +20,7 @@
 </script>
 
 <svelte:head>
-	<title>Login — Welcome Back</title>
+	<title>Login Chatting Kuy</title>
 </svelte:head>
 
 <main class="flex min-h-screen w-full items-center justify-center bg-white px-4">

@@ -55,6 +55,27 @@
 	}
 
 	onMount(async () => {
+		// Fix iOS keyboard — cegah window scroll, scroll hanya di scrollEl
+		const preventWindowScroll = () => {
+			if (window.scrollY !== 0) window.scrollTo(0, 0);
+		};
+		window.addEventListener('scroll', preventWindowScroll, { passive: true });
+
+		// Saat textarea fokus (keyboard muncul) — scroll pesan ke bawah
+		const inputEl = document.querySelector('textarea');
+		const handleFocus = () => {
+			setTimeout(() => {
+				if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+			}, 300); // tunggu keyboard muncul
+		};
+		inputEl?.addEventListener('focus', handleFocus);
+
+		// Cleanup
+		const origDestroy = () => {
+			window.removeEventListener('scroll', preventWindowScroll);
+			inputEl?.removeEventListener('focus', handleFocus);
+		};
+
 		await onSocketEvent('receive_message', handleReceive);
 		await onSocketEvent('typing', handleTyping);
 		await onSocketEvent('stop_typing', handleStopTyping);
@@ -170,7 +191,7 @@
 		<div
 			class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-4 md:flex"
 		>
-			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} />
+			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="md" />
 			<div>
 				<p class="text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
 				<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
@@ -243,7 +264,7 @@
 			<div class="typing-enter flex items-end gap-2">
 				<!-- Avatar lawan bicara -->
 				{#if conversation}
-					<!-- <Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" /> -->
+					<Avatar name={conversation.name} src={conversation?.otherAvatar ?? null} size="sm" />
 				{/if}
 				<!-- Bubble titik-titik -->
 				<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">

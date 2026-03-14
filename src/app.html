@@ -41,12 +41,8 @@
 			}
 		</style>
 		<script>
-			// Fix iOS keyboard — set --vh CSS variable ke tinggi window yang sebenarnya
-			function setVh() {
-				document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
-			}
-			setVh();
-			window.addEventListener('resize', setVh);
+			// Set --vh sekali saat load — TIDAK update saat keyboard muncul
+			document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
 		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">

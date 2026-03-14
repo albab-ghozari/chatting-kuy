@@ -347,9 +347,11 @@
 	}
 </script>
 
-<svelte:head><title>Chatting kuy</title></svelte:head>
+<svelte:head><title>Chat</title></svelte:head>
 
-<div class="fixed inset-0 flex w-full overflow-hidden bg-white">
+<div
+	style="position:fixed;top:0;left:0;right:0;height:calc(var(--vh,1vh)*100);overflow:hidden;display:flex;background:white;width:100%;"
+>
 	<!-- SIDEBAR -->
 	<aside
 		class="

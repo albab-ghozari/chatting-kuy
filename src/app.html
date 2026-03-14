@@ -1,38 +1,55 @@
 <!doctype html>
 <html lang="id">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual" />
-    <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual"
+		/>
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#0d0f1e" />
-    <meta name="mobile-web-app-capable" content="yes" />
+		<!-- PWA -->
+		<link rel="manifest" href="/manifest.json" />
+		<meta name="theme-color" content="#0d0f1e" />
+		<meta name="mobile-web-app-capable" content="yes" />
 
-    <!-- iOS Safari PWA -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="ChattingKuy" />
-    <link rel="apple-touch-icon" href="/icon-512.png" />
-    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
-    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
+		<!-- iOS Safari PWA -->
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="ChattingKuy" />
+		<link rel="apple-touch-icon" href="/icon-512.png" />
+		<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+		<link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
 
-    %sveltekit.head%
-    <style>
-      /* Fix Safari iPhone — layout tidak geser saat keyboard muncul */
-      html, body {
-        height: 100%;
-        height: -webkit-fill-available;
-        overflow: hidden;
-        position: fixed;
-        width: 100%;
-        top: 0;
-        left: 0;
-      }
-    </style>
-  </head>
-  <body data-sveltekit-preload-data="hover">
-    <div style="display: contents">%sveltekit.body%</div>
-  </body>
+		%sveltekit.head%
+		<style>
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+			}
+			#app-root {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				overflow: hidden;
+			}
+		</style>
+		<script>
+			// Fix iOS keyboard — set --vh CSS variable ke tinggi window yang sebenarnya
+			function setVh() {
+				document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
+			}
+			setVh();
+			window.addEventListener('resize', setVh);
+		</script>
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div id="app-root">%sveltekit.body%</div>
+	</body>
 </html>

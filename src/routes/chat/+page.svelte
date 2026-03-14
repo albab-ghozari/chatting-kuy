@@ -556,7 +556,8 @@
 		{#if activeConversation}
 			<!-- Header mobile -->
 			<div
-				class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
+				class="pt-safe flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
+				style="padding-top: max(12px, env(safe-area-inset-top))"
 			>
 				<button
 					on:click={backToSidebar}

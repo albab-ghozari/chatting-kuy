@@ -27,9 +27,34 @@
 				overscroll-behavior: none;
 				overflow: hidden;
 			}
+			#chat-viewport {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				transition: bottom 0.05s ease-out;
+			}
 		</style>
+		<script>
+			// Ikuti visualViewport agar layout menyesuaikan keyboard iOS
+			function setupViewport() {
+				var vv = window.visualViewport;
+				if (!vv) return;
+				function update() {
+					var el = document.getElementById('chat-viewport');
+					if (!el) return;
+					var offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
+					el.style.bottom = Math.max(0, offsetBottom) + 'px';
+					el.style.top = vv.offsetTop + 'px';
+				}
+				vv.addEventListener('resize', update);
+				vv.addEventListener('scroll', update);
+			}
+			window.addEventListener('load', setupViewport);
+		</script>
 	</head>
 	<body data-sveltekit-preload-data="hover">
-		<div style="display: contents">%sveltekit.body%</div>
+		<div id="chat-viewport">%sveltekit.body%</div>
 	</body>
 </html>

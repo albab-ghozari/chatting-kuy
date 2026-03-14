@@ -349,7 +349,7 @@
 
 <svelte:head><title>Chat</title></svelte:head>
 
-<div class="fixed inset-0 flex overflow-hidden overscroll-none bg-white">
+<div class="flex h-full w-full overflow-hidden bg-white">
 	<!-- SIDEBAR -->
 	<aside
 		class="

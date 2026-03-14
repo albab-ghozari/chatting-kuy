@@ -349,7 +349,7 @@
 
 <svelte:head><title>Chat</title></svelte:head>
 
-<div style="width:100%;height:100dvh;overflow:hidden;display:flex;background:white;">
+<div class="flex h-[100dvh] w-full overflow-hidden bg-white">
 	<!-- SIDEBAR -->
 	<aside
 		class="

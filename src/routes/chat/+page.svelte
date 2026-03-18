@@ -1,6 +1,5 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { notify, requestNotificationPermission } from '$lib/notification.js';
 
@@ -17,23 +16,22 @@
 	import ConversationItem from '$lib/components/ui/ConversationItem.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import ChatWindow from '$lib/components/ChatWindow.svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	let currentUser = null;
 	let conversations = [];
 	let activeConversation = null;
-	let chatWindow; // referensi ke ChatWindow component
+	let chatWindow;
 	let loadingConversations = false;
 	let searchQuery = '';
 	let showNewChat = false;
 	let userSearchQuery = '';
 	let userResults = [];
-	let allUsers = []; // cache semua user untuk instant search
+	let allUsers = [];
 	let searchingUsers = false;
 	let mobileView = 'sidebar';
-	let onlineUserIds = new SvelteSet(); // set userId yang sedang online
+	let onlineUserIds = new SvelteSet();
 
-	// ── Typing & Unread di sidebar ─────────────────────────
-	// { [conversationId]: true/false }
 	let sidebarTyping = {};
 	let typingTimers = {};
 
@@ -58,15 +56,10 @@
 		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 	}
 
-	// ── Handler typing dari socket (global, di +page level) ──
 	function handleGlobalTyping({ userId, room }) {
 		if (userId === currentUser?.id) return;
-
-		// Pakai Number agar cocok dengan conv.id yang bertipe number dari Prisma
 		const convId = Number(room);
-
 		sidebarTyping = { ...sidebarTyping, [convId]: true };
-
 		clearTimeout(typingTimers[convId]);
 		typingTimers[convId] = setTimeout(() => {
 			sidebarTyping = { ...sidebarTyping, [convId]: false };
@@ -78,13 +71,11 @@
 		sidebarTyping = { ...sidebarTyping, [Number(room)]: false };
 	}
 
-	// ── Handler pesan baru dari socket (global) ───────────────
 	function handleGlobalMessage(msg) {
 		const convId = Number(msg.conversationId);
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
 
-		// Update sidebar
 		conversations = conversations.map((c) => {
 			if (Number(c.id) !== convId) return c;
 			return {
@@ -96,9 +87,6 @@
 			};
 		});
 
-		// Notifikasi kalau pesan dari orang lain
-		// - Conversation tidak aktif → selalu tampilkan toast
-		// - Conversation aktif tapi tab tidak fokus → tetap tampilkan
 		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
 			const conv = conversations.find((c) => Number(c.id) === convId);
 			notify({
@@ -113,20 +101,20 @@
 	}
 
 	onMount(async () => {
-		// Minta izin browser notification (guard untuk Safari iPhone yang tidak support)
 		try {
 			if (typeof Notification !== 'undefined') {
-				Notification.permission;
 				if (Notification.permission === 'default') {
 					const granted = await requestNotificationPermission();
-					Notification.permission = granted ? 'granted' : 'denied';
+					// granted true/false
+					void granted;
 				} else if (Notification.permission === 'granted') {
-					await requestNotificationPermission(); // register SW
+					await requestNotificationPermission();
 				}
 			}
 		} catch (e) {
 			console.log('Notification not supported:', e.message);
 		}
+
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
@@ -134,30 +122,27 @@
 			return;
 		}
 		currentUser = user;
-		// Sync avatar dari localStorage
 		if (user.avatar) currentUser = { ...user };
-		await connectSocket(currentUser.id);
-		await loadConversations();
 
-		// Pasang listener global di level page — bukan di ChatWindow
-		// agar sidebar bisa update meski conversation tidak aktif
+		// Pasang listener DULU sebelum connect agar tidak race condition
 		await onSocketEvent('receive_message', handleGlobalMessage);
 		await onSocketEvent('typing', handleGlobalTyping);
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
 		await onSocketEvent('new_user', handleNewUser);
 		await onSocketEvent('user_online', ({ userId }) => {
 			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
-			// Found a mutable instance of the built-in Set class. Use SvelteSet instead.
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
 			onlineUserIds.delete(Number(userId));
 			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
-		// Terima list semua user online saat pertama connect/reconnect
 		await onSocketEvent('online_users', ({ userIds }) => {
-			// Replace dengan data fresh dari server (ini sudah include semua yg online)
 			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
+
+		// Baru connect dan load data
+		await connectSocket(currentUser.id);
+		await loadConversations();
 	});
 
 	onDestroy(async () => {
@@ -178,12 +163,8 @@
 			conversations = data.map((c) => ({
 				...c,
 				time: formatPreviewTime(c.lastMessageAt),
-				unread: c.unread ?? 0 // ← pakai dari backend, bukan hardcode 0
+				unread: c.unread ?? 0
 			}));
-
-			// Join semua room setelah dapat daftar conversation
-			// agar event typing & pesan baru bisa masuk ke sidebar
-			// meskipun conversation belum diklik
 			for (const conv of conversations) {
 				await joinRoom(conv.id);
 			}
@@ -200,9 +181,7 @@
 	async function selectConversation(conv) {
 		activeConversation = conv;
 		mobileView = 'chat';
-		// Reset unread saat conversation dibuka
 		conversations = conversations.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c));
-		// Messages diload oleh ChatWindow via event 'requestmessages'
 	}
 
 	function backToSidebar() {
@@ -211,9 +190,8 @@
 	}
 
 	function handleSend(e) {
-	const { content } = e.detail;
+		const { content } = e.detail;
 		if (!content || !activeConversation) return;
-		// Update sidebar preview
 		conversations = conversations.map((c) =>
 			c.id === activeConversation.id
 				? {
@@ -226,7 +204,6 @@
 		);
 	}
 
-	// handleNewMessage — hanya update sidebar preview
 	function handleNewMessage(e) {
 		const msg = e.detail;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
@@ -243,15 +220,9 @@
 		});
 	}
 
-	// Handler saat ada user baru daftar
 	async function handleNewUser(user) {
 		if (Number(user.id) === Number(currentUser?.id)) return;
-
-		// Simpan ke cache
 		allUsers = [...allUsers.filter((u) => u.id !== user.id), user];
-
-		// Kalau panel sedang buka dan ada query → re-fetch dari backend
-		// agar hasil selalu akurat (termasuk user yang baru daftar)
 		if (showNewChat && userSearchQuery.trim()) {
 			searchingUsers = true;
 			try {
@@ -264,7 +235,6 @@
 		}
 	}
 
-	// Fetch messages saat ChatWindow dispatch 'requestmessages'
 	async function handleRequestMessages(e) {
 		const { conversationId } = e.detail;
 		try {
@@ -279,30 +249,23 @@
 	async function handleUserSearch() {
 		clearTimeout(searchTimeout);
 		const q = userSearchQuery.trim().toLowerCase();
-
 		if (!q) {
 			userResults = [];
 			return;
 		}
 
-		// Tampilkan dulu dari cache allUsers — instant, tanpa tunggu API
 		const fromCache = allUsers.filter(
 			(u) => Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q)
 		);
 		if (fromCache.length > 0) userResults = fromCache;
 
-		// Lalu fetch dari API untuk hasil lengkap
 		searchTimeout = setTimeout(async () => {
 			searchingUsers = true;
 			try {
 				const results = await conversationApi.searchUsers(userSearchQuery);
-
-				// Merge hasil API ke cache allUsers
 				for (const u of results) {
 					if (!allUsers.find((x) => x.id === u.id)) allUsers = [...allUsers, u];
 				}
-
-				// Gabungkan: hasil API + user baru dari cache yang belum ada di API
 				const apiIds = new Set(results.map((u) => u.id));
 				const cacheOnly = allUsers.filter(
 					(u) =>
@@ -317,10 +280,10 @@
 		}, 300);
 	}
 
-	let startingChat = false; // guard agar tidak double click
+	let startingChat = false;
 
 	async function startChat(targetUser) {
-		if (startingChat) return; // cegah double call
+		if (startingChat) return;
 		startingChat = true;
 		try {
 			const conv = await conversationApi.create(targetUser.id);
@@ -340,7 +303,6 @@
 			startingChat = false;
 		}
 	}
-
 </script>
 
 <svelte:head><title>Chat</title></svelte:head>
@@ -349,8 +311,7 @@
 	<!-- SIDEBAR -->
 	<aside
 		class="
-    flex w-full flex-col border-r border-gray-100
-    bg-white md:w-72 md:shrink-0
+    flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
     {mobileView === 'chat' ? 'hidden md:flex' : 'flex'}
   "
 	>
@@ -414,8 +375,7 @@
 					bind:value={userSearchQuery}
 					on:input={handleUserSearch}
 					class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm
-                 placeholder:text-gray-400 focus:border-[#0d0f1e] focus:ring-2 focus:ring-[#0d0f1e]/20
-                 focus:outline-none"
+                 placeholder:text-gray-400 focus:border-[#0d0f1e] focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
 				/>
 				{#if searchingUsers}
 					<p class="mt-2 text-center text-xs text-gray-400">Mencari...</p>
@@ -430,7 +390,6 @@
 								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
 								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
 								{#if startingChat}
-									<!-- Spinner loading -->
 									<svg
 										class="h-4 w-4 shrink-0 animate-spin text-gray-400"
 										fill="none"
@@ -532,7 +491,7 @@
 						unread={conv.unread ?? 0}
 						active={activeConversation?.id === conv.id}
 						isTyping={sidebarTyping[Number(conv.id)] ?? false}
-						avatar={conv.otherAvatar ?? null}
+						otherAvatar={conv.otherAvatar ?? null}
 						online={onlineUserIds.has(Number(conv.otherUserId))}
 						on:click={() => selectConversation(conv)}
 					/>
@@ -544,19 +503,17 @@
 	<!-- AREA CHAT -->
 	<main
 		class="
-    flex w-full min-w-0 flex-1 flex-col
-    overflow-hidden md:w-auto
+    flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
     {mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}
   "
 	>
 		{#if activeConversation}
 			<!-- Header mobile -->
 			<div
-				class="pt-safe flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
+				class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
 				style="padding-top: max(12px, env(safe-area-inset-top))"
 			>
 				<button
-					
 					on:click={backToSidebar}
 					aria-label="Kembali ke daftar percakapan"
 					class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"

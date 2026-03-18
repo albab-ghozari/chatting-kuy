@@ -1,9 +1,6 @@
 <script>
-	import Avatar from './Avatar.svelte';
-
 	export let message;
 	export let currentUserId;
-	export let senderAvatar = null; // avatar pengirim (untuk bubble kiri)
 
 	$: isOwn = message.sender.id === currentUserId;
 	$: isOptimistic = typeof message.id === 'string' && message.id.startsWith('opt-');
@@ -31,8 +28,8 @@
 
 		<div
 			class="
-      w-full overflow-hidden rounded-2xl px-4 py-2.5
-      text-sm leading-relaxed wrap-words break-all whitespace-pre-wrap
+      wrap-words w-full overflow-hidden rounded-2xl px-4
+      py-2.5 text-sm leading-relaxed break-all whitespace-pre-wrap
       {isOwn ? 'rounded-br-sm bg-[#0d0f1e] text-white' : 'rounded-bl-sm bg-gray-100 text-[#0d0f1e]'}
     "
 		>

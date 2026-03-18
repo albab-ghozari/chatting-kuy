@@ -4,7 +4,6 @@
 	import { authApi } from '$lib/api.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import { goto } from '$app/navigation';
-	  import { resolve } from '$app/paths';
 
 	let username = '';
 	let password = '';
@@ -31,7 +30,7 @@
 		try {
 			const data = await authApi.login(username.trim(), password);
 			authStore.login(data.token, data.user);
-			await goto(resolve('/chat'));
+			await goto('/chat');
 		} catch (err) {
 			errors.general = err.message ?? 'Login gagal, coba lagi.';
 		} finally {
@@ -89,7 +88,7 @@
 		Don't have an account?
 		<button
 			type="button"
-			on:click={() => goto(resolve('/register'))}
+			on:click={() => goto('/register')}
 			class="ml-1 font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70"
 		>
 			Sign up

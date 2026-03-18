@@ -67,7 +67,7 @@
 			<!-- Badge unread -->
 			{#if unread > 0 && !active}
 				<span
-					class="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center
+					class="flex h-18px min-w-18px shrink-0 items-center justify-center
                      rounded-full bg-[#0d0f1e] px-1 text-[10px] font-bold text-white"
 				>
 					{unread > 99 ? '99+' : unread}

@@ -25,7 +25,8 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 		rules: {
 			'no-unused-vars': ['error', {
 				destructuredArrayIgnorePattern: '^_'
-			}]
+			}],
+			'svelte/no-navigation-without-resolve': 'off'
 		}
 	}
 ];

@@ -4,7 +4,6 @@
 	import { authApi } from '$lib/api.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import { resolve } from 'path';
 
 	let currentUser = null;
 	let username = '';
@@ -23,7 +22,7 @@
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
-			goto(resolve('/'));
+			goto('/');
 			return;
 		}
 		currentUser = user;

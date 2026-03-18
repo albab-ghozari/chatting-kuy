@@ -2,7 +2,6 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { notify, requestNotificationPermission } from '$lib/notification.js';
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
@@ -131,7 +130,7 @@
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
-			goto(resolve('/'));
+			goto('/');
 			return;
 		}
 		currentUser = user;
@@ -191,7 +190,7 @@
 		} catch (e) {
 			if (e.message?.includes('401')) {
 				authStore.logout();
-				goto(resolve('/'));
+				goto('/');
 			}
 		} finally {
 			loadingConversations = false;
@@ -361,7 +360,7 @@
 			<div class="flex items-center gap-1">
 				{#if currentUser}
 					<button
-						on:click={() => goto(resolve('/profile'))}
+						on:click={() => goto('/profile')}
 						class="transition-opacity hover:opacity-80"
 						title="Profil saya"
 					>
@@ -383,7 +382,7 @@
 					</svg>
 				</button>
 				<button
-					on:click={() => goto(resolve('/profile'))}
+					on:click={() => goto('/profile')}
 					class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100"
 					title="Profil & Pengaturan"
 				>

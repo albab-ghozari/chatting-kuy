@@ -5,7 +5,7 @@
 	import { page } from '$app/stores';
 	import LoginForm from '$lib/components/LoginForm.svelte';
 
-	onMount(async () => {
+	onMount(async () => {																	
 		if (!browser) return;
 
 		// Kalau ada ?force=1 → jangan redirect meski sudah login

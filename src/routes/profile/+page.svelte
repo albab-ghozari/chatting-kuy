@@ -4,6 +4,7 @@
 	import { authApi } from '$lib/api.js';
 	import { authStore } from '$lib/stores/auth.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import { resolve } from 'path';
 
 	let currentUser = null;
 	let username = '';
@@ -22,7 +23,7 @@
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
-			goto('/');
+			goto(resolve('/'));
 			return;
 		}
 		currentUser = user;
@@ -138,6 +139,7 @@
 	>
 		<button
 			on:click={() => goto('/chat')}
+			aria-label="Kembali ke Chat"
 			class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
 		>
 			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

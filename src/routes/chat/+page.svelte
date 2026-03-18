@@ -1,6 +1,8 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { notify, requestNotificationPermission } from '$lib/notification.js';
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
@@ -29,8 +31,7 @@
 	let allUsers = []; // cache semua user untuk instant search
 	let searchingUsers = false;
 	let mobileView = 'sidebar';
-	let notifPermission = 'default';
-	let onlineUserIds = new Set(); // set userId yang sedang online
+	let onlineUserIds = new SvelteSet(); // set userId yang sedang online
 
 	// ── Typing & Unread di sidebar ─────────────────────────
 	// { [conversationId]: true/false }
@@ -116,10 +117,10 @@
 		// Minta izin browser notification (guard untuk Safari iPhone yang tidak support)
 		try {
 			if (typeof Notification !== 'undefined') {
-				notifPermission = Notification.permission;
+				Notification.permission;
 				if (Notification.permission === 'default') {
 					const granted = await requestNotificationPermission();
-					notifPermission = granted ? 'granted' : 'denied';
+					Notification.permission = granted ? 'granted' : 'denied';
 				} else if (Notification.permission === 'granted') {
 					await requestNotificationPermission(); // register SW
 				}
@@ -130,7 +131,7 @@
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
 		if (!token || !user) {
-			goto('/');
+			goto(resolve('/'));
 			return;
 		}
 		currentUser = user;
@@ -146,16 +147,17 @@
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
 		await onSocketEvent('new_user', handleNewUser);
 		await onSocketEvent('user_online', ({ userId }) => {
-			onlineUserIds = new Set([...onlineUserIds, Number(userId)]);
+			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
+			// Found a mutable instance of the built-in Set class. Use SvelteSet instead.
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
 			onlineUserIds.delete(Number(userId));
-			onlineUserIds = new Set(onlineUserIds);
+			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
 		// Terima list semua user online saat pertama connect/reconnect
 		await onSocketEvent('online_users', ({ userIds }) => {
 			// Replace dengan data fresh dari server (ini sudah include semua yg online)
-			onlineUserIds = new Set([...onlineUserIds, ...userIds.map(Number)]);
+			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
 	});
 
@@ -189,7 +191,7 @@
 		} catch (e) {
 			if (e.message?.includes('401')) {
 				authStore.logout();
-				goto('/');
+				goto(resolve('/'));
 			}
 		} finally {
 			loadingConversations = false;
@@ -210,7 +212,7 @@
 	}
 
 	function handleSend(e) {
-		const { content, conversationId } = e.detail;
+	const { content } = e.detail;
 		if (!content || !activeConversation) return;
 		// Update sidebar preview
 		conversations = conversations.map((c) =>
@@ -340,11 +342,6 @@
 		}
 	}
 
-	function logout() {
-		authStore.logout();
-		disconnectSocket();
-		goto('/');
-	}
 </script>
 
 <svelte:head><title>Chat</title></svelte:head>
@@ -364,7 +361,7 @@
 			<div class="flex items-center gap-1">
 				{#if currentUser}
 					<button
-						on:click={() => goto('/profile')}
+						on:click={() => goto(resolve('/profile'))}
 						class="transition-opacity hover:opacity-80"
 						title="Profil saya"
 					>
@@ -386,7 +383,7 @@
 					</svg>
 				</button>
 				<button
-					on:click={() => goto('/profile')}
+					on:click={() => goto(resolve('/profile'))}
 					class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100"
 					title="Profil & Pengaturan"
 				>
@@ -560,7 +557,9 @@
 				style="padding-top: max(12px, env(safe-area-inset-top))"
 			>
 				<button
+					
 					on:click={backToSidebar}
+					aria-label="Kembali ke daftar percakapan"
 					class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
 				>
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

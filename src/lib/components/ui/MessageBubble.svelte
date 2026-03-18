@@ -1,5 +1,6 @@
 <script>
 	export let message;
+
 	export let currentUserId;
 
 	$: isOwn = message.sender.id === currentUserId;

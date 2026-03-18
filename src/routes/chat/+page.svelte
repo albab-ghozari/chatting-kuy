@@ -16,7 +16,6 @@
 	import ConversationItem from '$lib/components/ui/ConversationItem.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import ChatWindow from '$lib/components/ChatWindow.svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 
 	let currentUser = null;
 	let conversations = [];
@@ -30,7 +29,7 @@
 	let allUsers = [];
 	let searchingUsers = false;
 	let mobileView = 'sidebar';
-	let onlineUserIds = new SvelteSet();
+	let onlineUserIds = new Set();
 
 	let sidebarTyping = {};
 	let typingTimers = {};
@@ -130,14 +129,14 @@
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
 		await onSocketEvent('new_user', handleNewUser);
 		await onSocketEvent('user_online', ({ userId }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
+			onlineUserIds = new Set([...onlineUserIds, Number(userId)]);
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
 			onlineUserIds.delete(Number(userId));
-			onlineUserIds = new SvelteSet(onlineUserIds);
+			onlineUserIds = new Set(onlineUserIds);
 		});
 		await onSocketEvent('online_users', ({ userIds }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
+			onlineUserIds = new Set([...onlineUserIds, ...userIds.map(Number)]);
 		});
 
 		// Baru connect dan load data
@@ -491,7 +490,7 @@
 						unread={conv.unread ?? 0}
 						active={activeConversation?.id === conv.id}
 						isTyping={sidebarTyping[Number(conv.id)] ?? false}
-						otherAvatar={conv.otherAvatar ?? null}
+						avatar={conv.otherAvatar ?? null}
 						online={onlineUserIds.has(Number(conv.otherUserId))}
 						on:click={() => selectConversation(conv)}
 					/>

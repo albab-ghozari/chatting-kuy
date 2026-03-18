@@ -7,7 +7,7 @@
 <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex flex-col gap-2">
 	{#each $toasts as toast (toast.id)}
 		<div
-			class="animate-slide-in pointer-events-auto flex max-w-[320px] min-w-[260px] cursor-pointer items-center
+			class="animate-slide-in pointer-events-auto flex max-w-[320px] min-w-260px cursor-pointer items-center
              gap-3 rounded-2xl border border-gray-100 bg-white px-4
              py-3 shadow-xl transition-shadow hover:shadow-2xl"
 			on:click={() => {
@@ -31,8 +31,10 @@
 
 			<!-- Tombol tutup -->
 			<button
+
 				class="shrink-0 text-gray-300 transition-colors hover:text-gray-500"
 				on:click|stopPropagation={() => dismissToast(toast.id)}
+				aria-label="Close notification"
 			>
 				<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path

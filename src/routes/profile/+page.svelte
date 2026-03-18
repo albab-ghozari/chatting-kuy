@@ -241,9 +241,10 @@
 				{#if activeTab === 'profile'}
 					<!-- Form profil -->
 					<div class="flex flex-col gap-1.5">
-						<label class="text-xs font-semibold text-gray-500">Username</label>
+						<label for="username" class="text-xs font-semibold text-gray-500">Username</label>
 						<input
 							type="text"
+							id="username"
 							bind:value={username}
 							placeholder="Username baru"
 							class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm
@@ -264,9 +265,10 @@
 					<!-- Form password -->
 					<div class="flex flex-col gap-3">
 						<div class="flex flex-col gap-1.5">
-							<label class="text-xs font-semibold text-gray-500">Password Lama</label>
+							<label for="currentPassword" class="text-xs font-semibold text-gray-500">Password Lama</label>
 							<input
 								type="password"
+								id="currentPassword"
 								bind:value={currentPassword}
 								placeholder="••••••••"
 								class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm
@@ -275,9 +277,10 @@
 							/>
 						</div>
 						<div class="flex flex-col gap-1.5">
-							<label class="text-xs font-semibold text-gray-500">Password Baru</label>
+							<label for="newPassword" class="text-xs font-semibold text-gray-500">Password Baru</label>
 							<input
 								type="password"
+								id="newPassword"
 								bind:value={newPassword}
 								placeholder="••••••••"
 								class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm
@@ -286,9 +289,10 @@
 							/>
 						</div>
 						<div class="flex flex-col gap-1.5">
-							<label class="text-xs font-semibold text-gray-500">Konfirmasi Password Baru</label>
+							<label for="confirmPassword" class="text-xs font-semibold text-gray-500">Konfirmasi Password Baru</label>
 							<input
 								type="password"
+								id="confirmPassword"
 								bind:value={confirmPassword}
 								placeholder="••••••••"
 								class="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm

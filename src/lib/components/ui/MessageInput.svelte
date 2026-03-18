@@ -46,7 +46,7 @@
 		rows="1"
 		on:keydown={handleKeydown}
 		on:input={handleInput}
-		class="max-h-[120px] min-h-[24px] flex-1 resize-none bg-transparent
+		class="max-h-120px min-h-24px flex-1 resize-none bg-transparent
            text-sm leading-relaxed text-[#0d0f1e]
            placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 	></textarea>
@@ -61,7 +61,7 @@
 			: 'cursor-not-allowed bg-gray-100 text-gray-400'}"
 		aria-label="Kirim pesan"
 	>
-		<svg class="h-4 w-4 translate-x-[1px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<svg class="h-4 w-4 translate-x-1px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path
 				stroke-linecap="round"
 				stroke-linejoin="round"

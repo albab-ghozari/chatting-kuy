@@ -11,6 +11,7 @@
 	import MessageInput from '$lib/components/ui/MessageInput.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import { createEventDispatcher } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	export let conversation = null; // conversation sekarang include otherAvatar
 	export let currentUserId = null;
@@ -23,7 +24,7 @@
 
 	let inputValue = '';
 	let scrollEl;
-	let typingUsers = new Set();
+	let typingUsers = new SvelteSet();
 	let typingTimers = {};
 	let lastConvId = null;
 
@@ -70,16 +71,16 @@
 		};
 		inputEl?.addEventListener('focus', handleFocus);
 
-		// Cleanup
-		const origDestroy = () => {
-			window.removeEventListener('scroll', preventWindowScroll);
-			inputEl?.removeEventListener('focus', handleFocus);
-		};
-
 		await onSocketEvent('receive_message', handleReceive);
 		await onSocketEvent('typing', handleTyping);
 		await onSocketEvent('stop_typing', handleStopTyping);
 		await onSocketEvent('messages_read', handleMessagesRead);
+
+		// Cleanup
+		return () => {
+			window.removeEventListener('scroll', preventWindowScroll);
+			inputEl?.removeEventListener('focus', handleFocus);
+		};
 	});
 
 	onDestroy(async () => {
@@ -130,18 +131,18 @@
 	function handleTyping({ userId, room }) {
 		if (Number(userId) === Number(currentUserId)) return;
 		if (Number(room) !== Number(conversation?.id)) return;
-		typingUsers = new Set([...typingUsers, userId]);
+		typingUsers = new SvelteSet([...typingUsers, userId]);
 		clearTimeout(typingTimers[userId]);
 		typingTimers[userId] = setTimeout(() => {
 			typingUsers.delete(userId);
-			typingUsers = new Set(typingUsers);
+			typingUsers = new SvelteSet(typingUsers);
 		}, 2500);
 	}
 
 	function handleStopTyping({ userId, room }) {
 		if (Number(room) !== Number(conversation?.id)) return;
 		typingUsers.delete(userId);
-		typingUsers = new Set(typingUsers);
+		typingUsers = new SvelteSet(typingUsers);
 	}
 
 	export function addOptimistic(content) {

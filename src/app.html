@@ -16,7 +16,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="ChattingKuy" />
 
-
   %sveltekit.head%
   <style>
     html,
@@ -24,38 +23,11 @@
       height: 100%;
       margin: 0;
     }
-
-    #chat-viewport {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      transition: bottom 0.05s ease-out;
-    }
   </style>
-  <script>
-    // Ikuti visualViewport — hanya aktif di halaman /chat
-    function setupViewport() {
-      if (!window.location.pathname.startsWith('/chat')) return;
-      var vv = window.visualViewport;
-      if (!vv) return;
-      function update() {
-        var el = document.getElementById('chat-viewport');
-        if (!el) return;
-        var offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
-        el.style.bottom = Math.max(0, offsetBottom) + 'px';
-        el.style.top = vv.offsetTop + 'px';
-      }
-      vv.addEventListener('resize', update);
-      vv.addEventListener('scroll', update);
-    }
-    window.addEventListener('load', setupViewport);
-  </script>
 </head>
 
 <body data-sveltekit-preload-data="hover">
-  <div id="chat-viewport">%sveltekit.body%</div>
+  <div style="display: contents">%sveltekit.body%</div>
 </body>
 
 </html>

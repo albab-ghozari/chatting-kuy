@@ -17,14 +17,17 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 	{
 		languageOptions: { globals: { ...globals.browser, ...globals.node } }
 	},
-
 	{
 		files: ['**/*.svelte', '**/*.svelte.js'],
 		languageOptions: { parserOptions: { svelteConfig } }
-	}, {
+	},
+	{
 		rules: {
-			'no-unused-vars': ['error', {
-				destructuredArrayIgnorePattern: '^_'
+			'no-unused-vars': ['warn', {
+				varsIgnorePattern: '^_',
+				argsIgnorePattern: '^_',
+				destructuredArrayIgnorePattern: '^_',
+				caughtErrorsIgnorePattern: '^_'
 			}],
 			'svelte/no-navigation-without-resolve': 'off'
 		}

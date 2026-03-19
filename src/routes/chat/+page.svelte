@@ -307,7 +307,10 @@
 
 <svelte:head><title>Chat</title></svelte:head>
 
-<div class="flex h-full w-full overflow-hidden bg-white">
+<div
+	class="chat-page-root flex w-full overflow-hidden bg-white"
+	style="position:fixed;top:0;left:0;right:0;bottom:0;"
+>
 	<!-- SIDEBAR -->
 	<aside
 		class="
@@ -444,7 +447,7 @@
 		<!-- Conversation list -->
 		<div class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-4">
 			{#if loadingConversations && conversations.length === 0}
-				{#each Array(4) as _, i (i)}
+				{#each { length: 4 } as _, i (i)}
 					<div class="flex items-center gap-3 px-3 py-3">
 						<div class="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-200"></div>
 						<div class="flex flex-1 flex-col gap-1.5">

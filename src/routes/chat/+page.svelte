@@ -1,7 +1,7 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { notify, requestNotificationPermission } from '$lib/notification.js';
+	import { notify, requestNotificationPermission, subscribePush } from '$lib/notification.js';
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { authStore } from '$lib/stores/auth.js';
@@ -103,12 +103,13 @@
 	onMount(async () => {
 		try {
 			if (typeof Notification !== 'undefined') {
+				const token = localStorage.getItem('token');
 				if (Notification.permission === 'default') {
 					const granted = await requestNotificationPermission();
-					// granted true/false
-					void granted;
+					if (granted) await subscribePush(token);
 				} else if (Notification.permission === 'granted') {
 					await requestNotificationPermission();
+					await subscribePush(token);
 				}
 			}
 		} catch (e) {

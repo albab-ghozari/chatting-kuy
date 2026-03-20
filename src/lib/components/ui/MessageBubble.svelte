@@ -1,7 +1,4 @@
 <script>
-	import { fly } from 'svelte/transition';
-	import { cubicOut } from 'svelte/easing';
-
 	export let message;
 	export let currentUserId;
 	export let animate = false;
@@ -19,14 +16,11 @@
 </script>
 
 <div
-	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}"
-	in:fly={{
-		x: animate ? (isOwn ? 12 : -12) : 0,
-		y: animate ? 6 : 0,
-		duration: animate ? 10000 : 0,
-		easing: cubicOut,
-		opacity: animate ? 0 : 1
-	}}
+	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'} {animate
+		? isOwn
+			? 'msg-enter-right'
+			: 'msg-enter-left'
+		: ''}"
 >
 	{#if !isOwn}
 		<!-- avatar -->
@@ -127,3 +121,35 @@
 		</div>
 	</div>
 </div>
+
+<style>
+	.msg-enter-right {
+		animation: msgRight 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+	}
+
+	.msg-enter-left {
+		animation: msgLeft 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+	}
+
+	@keyframes msgRight {
+		from {
+			opacity: 0;
+			transform: translateX(12px) translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0) translateY(0);
+		}
+	}
+
+	@keyframes msgLeft {
+		from {
+			opacity: 0;
+			transform: translateX(-12px) translateY(6px);
+		}
+		to {
+			opacity: 1;
+			transform: translateX(0) translateY(0);
+		}
+	}
+</style>

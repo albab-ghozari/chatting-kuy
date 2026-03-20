@@ -27,6 +27,7 @@
 	let typingUsers = new SvelteSet();
 	let typingTimers = {};
 	let lastConvId = null;
+	let newMessageIds = new Set();
 
 	$: isTyping = typingUsers.size > 0;
 

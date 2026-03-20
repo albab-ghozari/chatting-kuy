@@ -1,5 +1,5 @@
 <script>
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { notify, requestNotificationPermission, subscribePush } from '$lib/notification.js';
 
@@ -286,18 +286,19 @@
 	async function handleRequestMessages(e) {
 		const { conversationId } = e.detail;
 		try {
+			// Tunggu DOM update dulu
+			await tick();
+
 			// Cek cache dulu
 			let cache = {};
 			messagesCache.subscribe((v) => (cache = v))();
 			if (cache[conversationId]) {
-				// Tunggu tick agar chatWindow binding siap
-				await new Promise((r) => setTimeout(r, 0));
 				if (chatWindow) chatWindow.setMessages(cache[conversationId]);
 				return;
 			}
+
 			// Tidak ada di cache — fetch dari API
 			const msgs = await messageApi.getByConversation(conversationId);
-			// Simpan ke cache
 			messagesCache.update((c) => ({ ...c, [conversationId]: msgs }));
 			if (chatWindow) chatWindow.setMessages(msgs);
 		} catch (err) {

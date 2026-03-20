@@ -8,4 +8,7 @@ export const typingUsers = writable([])
 
 // Store untuk conversations — persist saat navigasi
 export const conversationsStore = writable([])
-export const conversationsLoaded = writable(false) // sudah pernah load atau belum
+export const conversationsLoaded = writable(false)
+
+// Cache messages per conversation — { [conversationId]: messages[] }
+export const messagesCache = writable({})

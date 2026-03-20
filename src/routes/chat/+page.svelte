@@ -5,7 +5,7 @@
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { authStore } from '$lib/stores/auth.js';
-	import { conversationsStore, conversationsLoaded } from '$lib/stores/chatStore.js';
+	import { conversationsStore, conversationsLoaded, messagesCache } from '$lib/stores/chatStore.js';
 	import { conversationApi, messageApi } from '$lib/api.js';
 	import {
 		connectSocket,
@@ -78,6 +78,14 @@
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
 
+		// Update cache messages
+		messagesCache.update((cache) => {
+			const existing = cache[convId] ?? [];
+			// Hindari duplikat
+			if (existing.find((m) => m.id === msg.id)) return cache;
+			return { ...cache, [convId]: [...existing, msg] };
+		});
+
 		setConversations(
 			conversations.map((c) => {
 				if (Number(c.id) !== convId) return c;
@@ -149,6 +157,20 @@
 		let storedConvs = [];
 		conversationsStore.subscribe((val) => (storedConvs = val))();
 		if (storedConvs.length > 0) conversations = storedConvs;
+
+		// Fix iOS Safari keyboard — visualViewport
+		if (typeof window !== 'undefined' && window.visualViewport) {
+			const vv = window.visualViewport;
+			const update = () => {
+				const el = document.querySelector('.chat-page-root');
+				if (!el) return;
+				const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
+				el.style.bottom = Math.max(0, offsetBottom) + 'px';
+				el.style.top = vv.offsetTop + 'px';
+			};
+			vv.addEventListener('resize', update);
+			vv.addEventListener('scroll', update);
+		}
 
 		// Baru connect dan load data
 		await connectSocket(currentUser.id);
@@ -264,7 +286,17 @@
 	async function handleRequestMessages(e) {
 		const { conversationId } = e.detail;
 		try {
+			// Cek cache dulu
+			let cache = {};
+			messagesCache.subscribe((v) => (cache = v))();
+			if (cache[conversationId]) {
+				if (chatWindow) chatWindow.setMessages(cache[conversationId]);
+				return;
+			}
+			// Tidak ada di cache — fetch dari API
 			const msgs = await messageApi.getByConversation(conversationId);
+			// Simpan ke cache
+			messagesCache.update((c) => ({ ...c, [conversationId]: msgs }));
 			if (chatWindow) chatWindow.setMessages(msgs);
 		} catch (err) {
 			console.error('fetch messages error:', err);

@@ -23,7 +23,7 @@
 	in:fly={{
 		x: animate ? (isOwn ? 12 : -12) : 0,
 		y: animate ? 6 : 0,
-		duration: animate ? 1000 : 0,
+		duration: animate ? 10000 : 0,
 		easing: cubicOut,
 		opacity: animate ? 0 : 1
 	}}

@@ -24,10 +24,13 @@ async function getSocket() {
 
       _socket.on('connect', () => {
          console.log('✅ socket connected:', _socket.id)
-         // Kirim join ulang saat reconnect
          if (_userId) {
             _socket.emit('join', _userId)
             console.log('🔁 re-join userId:', _userId)
+         }
+         // Dispatch event custom agar +page.svelte tahu socket reconnect
+         if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('socket-reconnected'))
          }
       })
       _socket.on('disconnect', () => console.log('❌ socket disconnected'))

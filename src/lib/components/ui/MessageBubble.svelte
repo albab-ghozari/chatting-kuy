@@ -15,8 +15,6 @@
 			minute: '2-digit'
 		});
 	}
-
-	// Hitung params animasi — null berarti tidak animasi
 </script>
 
 <div

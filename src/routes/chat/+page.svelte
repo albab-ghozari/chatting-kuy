@@ -290,6 +290,8 @@
 			let cache = {};
 			messagesCache.subscribe((v) => (cache = v))();
 			if (cache[conversationId]) {
+				// Tunggu tick agar chatWindow binding siap
+				await new Promise((r) => setTimeout(r, 0));
 				if (chatWindow) chatWindow.setMessages(cache[conversationId]);
 				return;
 			}

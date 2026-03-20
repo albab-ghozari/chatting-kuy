@@ -78,16 +78,18 @@
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
 
-		conversations = conversations.map((c) => {
-			if (Number(c.id) !== convId) return c;
-			return {
-				...c,
-				lastMessage: msg.content,
-				lastMessageAt: msg.createdAt,
-				time: formatPreviewTime(msg.createdAt),
-				unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
-			};
-		});
+		setConversations(
+			conversations.map((c) => {
+				if (Number(c.id) !== convId) return c;
+				return {
+					...c,
+					lastMessage: msg.content,
+					lastMessageAt: msg.createdAt,
+					time: formatPreviewTime(msg.createdAt),
+					unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
+				};
+			})
+		);
 
 		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
 			const conv = conversations.find((c) => Number(c.id) === convId);
@@ -143,10 +145,10 @@
 			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
 
-		// Sync dari store ke local state
-		_storeUnsub = conversationsStore.subscribe((val) => {
-			if (val.length > 0) conversations = val;
-		});
+		// Ambil data dari store langsung — tidak perlu subscribe
+		let storedConvs = [];
+		conversationsStore.subscribe((val) => (storedConvs = val))();
+		if (storedConvs.length > 0) conversations = storedConvs;
 
 		// Baru connect dan load data
 		await connectSocket(currentUser.id);
@@ -181,8 +183,8 @@
 				time: formatPreviewTime(c.lastMessageAt),
 				unread: c.unread ?? 0
 			}));
-			conversationsStore.set(conversations);
 			conversationsLoaded.set(true);
+			conversationsStore.set(conversations);
 			for (const conv of conversations) {
 				await joinRoom(conv.id);
 			}
@@ -207,8 +209,11 @@
 		activeConversation = null;
 	}
 
-	// Sync conversations ke store setiap kali berubah
-	$: conversationsStore.set(conversations);
+	// Helper — update conversations dan sync ke store sekaligus
+	function setConversations(val) {
+		conversations = val;
+		conversationsStore.set(val);
+	}
 
 	function handleSend(e) {
 		const { content } = e.detail;

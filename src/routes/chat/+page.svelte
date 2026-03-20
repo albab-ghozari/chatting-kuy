@@ -321,6 +321,20 @@
 		}
 	}
 
+	// Update cache saat lawan membaca pesan (dapat event dari ChatWindow)
+	function handleMessagesRead(e) {
+		const { conversationId } = e.detail;
+		messagesCache.update((cache) => {
+			if (!cache[conversationId]) return cache;
+			return {
+				...cache,
+				[conversationId]: cache[conversationId].map((m) =>
+					Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m
+				)
+			};
+		});
+	}
+
 	let searchTimeout;
 	async function handleUserSearch() {
 		clearTimeout(searchTimeout);
@@ -631,6 +645,7 @@
 				on:send={handleSend}
 				on:newmessage={handleNewMessage}
 				on:requestmessages={handleRequestMessages}
+				on:messagesread={handleMessagesRead}
 			/>
 		{:else}
 			<div

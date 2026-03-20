@@ -95,7 +95,6 @@
 
 	function handleReceive(msg) {
 		newMessageIds = new Set([...newMessageIds, msg.id]);
-		console.log('🎯 newMessageIds:', [...newMessageIds], 'msg.id:', msg.id);
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 
 		const isFromOther = Number(msg.sender?.id) !== Number(currentUserId);
@@ -117,7 +116,9 @@
 				Number(m.sender?.id) === Number(msg.sender?.id)
 		);
 		if (optIdx !== -1) {
-			messages = messages.map((m, i) => (i === optIdx ? msg : m));
+			// Simpan optId sebagai _key agar {#each} key tidak berubah → tidak remount → tidak animasi lagi
+			const stableKey = messages[optIdx].id;
+			messages = messages.map((m, i) => (i === optIdx ? { ...msg, _key: stableKey } : m));
 		} else if (!messages.find((m) => m.id === msg.id)) {
 			messages = [...messages, msg];
 		}
@@ -129,6 +130,8 @@
 		messages = messages.map((m) =>
 			Number(m.sender?.id) === Number(currentUserId) ? { ...m, isRead: true } : m
 		);
+		// Notify parent agar cache ikut terupdate
+		dispatch('messagesread', { conversationId: Number(conversationId) });
 	}
 
 	function handleTyping({ userId, room }) {
@@ -151,7 +154,6 @@
 	export function addOptimistic(content) {
 		const optId = `opt-${Date.now()}`;
 		newMessageIds = new Set([...newMessageIds, optId]);
-		console.log('🎯 addOptimistic optId:', optId, 'newMessageIds:', [...newMessageIds]);
 		const optimistic = {
 			id: optId,
 			content,
@@ -184,7 +186,7 @@
 				groups.push({ type: 'date', label: date, id: `date-${date}` });
 				lastDate = date;
 			}
-			groups.push({ type: 'message', data: msg, id: String(msg.id) });
+			groups.push({ type: 'message', data: msg, id: String(msg._key ?? msg.id) });
 		}
 		return groups;
 	}

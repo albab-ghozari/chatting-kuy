@@ -100,11 +100,14 @@
 
 		const isFromOther = Number(msg.sender?.id) !== Number(currentUserId);
 
-		// Kalau pesan dari orang lain dan conversation sedang aktif/terbuka
-		// → langsung tandai isRead: true dan emit mark_read ke server
+		// Kalau pesan dari orang lain → tandai dibaca (kita sedang buka conversation)
+		// Pesan dari diri sendiri tidak perlu diubah isRead-nya di sini
 		if (isFromOther) {
 			msg = { ...msg, isRead: true };
 			emitMarkRead(conversation.id, currentUserId);
+		} else {
+			// Pesan dari kita sendiri — isRead tetap dari server (false sampai lawan buka)
+			msg = { ...msg, isRead: msg.isRead ?? false };
 		}
 
 		const optIdx = messages.findIndex(

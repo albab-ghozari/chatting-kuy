@@ -141,6 +141,20 @@
 			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
 
+		// Fix iOS Safari keyboard — visualViewport
+		if (typeof window !== 'undefined' && window.visualViewport) {
+			const vv = window.visualViewport;
+			const update = () => {
+				const el = document.querySelector('.chat-page-root');
+				if (!el) return;
+				const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
+				el.style.bottom = Math.max(0, offsetBottom) + 'px';
+				el.style.top = vv.offsetTop + 'px';
+			};
+			vv.addEventListener('resize', update);
+			vv.addEventListener('scroll', update);
+		}
+
 		// Baru connect dan load data
 		await connectSocket(currentUser.id);
 		await loadConversations();

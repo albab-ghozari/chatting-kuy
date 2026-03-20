@@ -1,5 +1,6 @@
 <script>
 	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 
 	export let message;
 	export let currentUserId;
@@ -19,7 +20,13 @@
 
 <div
 	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}"
-	in:fly={{ x: animate ? (isOwn ? 16 : -16) : 0, y: animate ? 8 : 0, duration: animate ? 180 : 0 }}
+	in:fly={{
+		x: animate ? (isOwn ? 12 : -12) : 0,
+		y: animate ? 6 : 0,
+		duration: animate ? 250 : 0,
+		easing: cubicOut,
+		opacity: animate ? 0 : 1
+	}}
 >
 	{#if !isOwn}
 		<!-- avatar -->

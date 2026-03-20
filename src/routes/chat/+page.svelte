@@ -175,10 +175,57 @@
 		// Baru connect dan load data
 		await connectSocket(currentUser.id);
 		await loadConversations();
+
+		// Saat app kembali ke foreground — refresh data yang missed
+		let _wasHidden = false;
+		const onVisibilityChange = async () => {
+			if (document.visibilityState === 'hidden') {
+				_wasHidden = true;
+				return;
+			}
+			if (!_wasHidden) return;
+			_wasHidden = false;
+			await refreshAfterBackground();
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+
+		// Saat socket reconnect — refresh data
+		const onSocketReconnect = async () => {
+			await refreshAfterBackground();
+		};
+		window.addEventListener('socket-reconnected', onSocketReconnect);
+
+		// Simpan untuk cleanup
+		_cleanupHandlers = () => {
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			window.removeEventListener('socket-reconnected', onSocketReconnect);
+		};
 	});
+
+	let _cleanupHandlers = null;
+
+	// Refresh conversations dan messages aktif setelah kembali ke foreground
+	async function refreshAfterBackground() {
+		// Refresh conversation list
+		await loadConversations(true);
+
+		// Kalau ada conversation aktif — refresh messages
+		if (activeConversation) {
+			try {
+				const msgs = await messageApi.getByConversation(activeConversation.id);
+				// Update cache dengan data terbaru
+				messagesCache.update((c) => ({ ...c, [activeConversation.id]: msgs }));
+				// Update ChatWindow tanpa trigger emitMarkRead
+				if (chatWindow) chatWindow.setMessages(msgs, false);
+			} catch (e) {
+				console.error('refresh messages error:', e);
+			}
+		}
+	}
 
 	onDestroy(async () => {
 		if (_storeUnsub) _storeUnsub();
+		if (_cleanupHandlers) _cleanupHandlers();
 		await offSocketEvent('receive_message', handleGlobalMessage);
 		await offSocketEvent('typing', handleGlobalTyping);
 		await offSocketEvent('stop_typing', handleGlobalStopTyping);

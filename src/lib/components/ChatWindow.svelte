@@ -260,7 +260,7 @@
 					<MessageBubble
 						message={item.data}
 						{currentUserId}
-						animate={newMessageIds.has(item.data.id)}
+						animate={newMessageIds.has(item.data._key ?? item.data.id)}
 						senderAvatar={Number(item.data.sender?.id) !== Number(currentUserId)
 							? (conversation?.otherAvatar ?? null)
 							: null}

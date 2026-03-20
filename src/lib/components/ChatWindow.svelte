@@ -27,7 +27,6 @@
 	let typingUsers = new SvelteSet();
 	let typingTimers = {};
 	let lastConvId = null;
-	let newMessageIds = new Set();
 
 	$: isTyping = typingUsers.size > 0;
 
@@ -97,6 +96,7 @@
 
 	function handleReceive(msg) {
 		newMessageIds = new Set([...newMessageIds, msg.id]);
+		console.log('🎯 newMessageIds:', [...newMessageIds], 'msg.id:', msg.id);
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 
 		const isFromOther = Number(msg.sender?.id) !== Number(currentUserId);
@@ -150,6 +150,7 @@
 	export function addOptimistic(content) {
 		const optId = `opt-${Date.now()}`;
 		newMessageIds = new Set([...newMessageIds, optId]);
+		console.log('🎯 addOptimistic optId:', optId, 'newMessageIds:', [...newMessageIds]);
 		const optimistic = {
 			id: optId,
 			content,

@@ -1,4 +1,6 @@
 <script>
+	import { onMount } from 'svelte';
+
 	export let message;
 	export let currentUserId;
 	export let animate = false;
@@ -7,12 +9,14 @@
 	$: isOptimistic = typeof message.id === 'string' && message.id.startsWith('opt-');
 	$: isRead = message.isRead ?? false;
 
-	// Freeze nilai animate saat pertama render — tidak reactive
-	// Sehingga animasi tidak replay saat isRead berubah
-	let _animateClass = '';
-	if (animate) {
-		_animateClass = isOwn ? 'msg-enter-right' : 'msg-enter-left';
-	}
+	// Freeze animasi saat mount — tidak berubah saat isRead update
+	let animateClass = '';
+	onMount(() => {
+		if (animate) {
+			const own = message.sender.id === currentUserId;
+			animateClass = own ? 'msg-enter-right' : 'msg-enter-left';
+		}
+	});
 
 	function formatTime(dateStr) {
 		return new Date(dateStr).toLocaleTimeString('id-ID', {
@@ -22,7 +26,7 @@
 	}
 </script>
 
-<div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'} {_animateClass}">
+<div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'} {animateClass}">
 	{#if !isOwn}
 		<!-- avatar -->
 	{/if}

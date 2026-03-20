@@ -3,6 +3,7 @@
 
 	export let message;
 	export let currentUserId;
+	export let animate = false;
 
 	$: isOwn = message.sender.id === currentUserId;
 	$: isOptimistic = typeof message.id === 'string' && message.id.startsWith('opt-');
@@ -14,14 +15,14 @@
 			minute: '2-digit'
 		});
 	}
+
+	// Hitung params animasi — null berarti tidak animasi
+	$: flyParams = animate ? { x: isOwn ? 16 : -16, y: 10, duration: 180 } : { duration: 0 };
 </script>
 
-<div
-	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}"
-	in:fly={{ x: isOwn ? 20 : -20, y: 8, duration: 200, opacity: 0 }}
->
+<div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}" in:fly={flyParams}>
 	{#if !isOwn}
-		<!-- <Avatar name={message.sender.username} src={message.sender.avatar ?? null} size="sm" /> -->
+		<!-- avatar -->
 	{/if}
 
 	<div class="flex max-w-[75%] min-w-0 flex-col gap-1 {isOwn ? 'items-end' : 'items-start'}">
@@ -41,7 +42,6 @@
 			{message.content}
 		</div>
 
-		<!-- Timestamp + ceklis -->
 		<div class="flex items-center gap-1 px-1">
 			<span class="text-[10px] text-gray-400">
 				{formatTime(message.createdAt)}

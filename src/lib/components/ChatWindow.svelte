@@ -95,6 +95,7 @@
 	});
 
 	function handleReceive(msg) {
+		newMessageIds = new Set([...newMessageIds, msg.id]);
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 
 		const isFromOther = Number(msg.sender?.id) !== Number(currentUserId);
@@ -146,8 +147,10 @@
 	}
 
 	export function addOptimistic(content) {
+		const optId = `opt-${Date.now()}`;
+		newMessageIds = new Set([...newMessageIds, optId]);
 		const optimistic = {
-			id: `opt-${Date.now()}`,
+			id: optId,
 			content,
 			createdAt: new Date().toISOString(),
 			isRead: false,
@@ -252,6 +255,7 @@
 					<MessageBubble
 						message={item.data}
 						{currentUserId}
+						animate={newMessageIds.has(item.data.id)}
 						senderAvatar={Number(item.data.sender?.id) !== Number(currentUserId)
 							? (conversation?.otherAvatar ?? null)
 							: null}

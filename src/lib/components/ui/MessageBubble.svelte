@@ -17,10 +17,12 @@
 	}
 
 	// Hitung params animasi — null berarti tidak animasi
-	$: flyParams = animate ? { x: isOwn ? 16 : -16, y: 10, duration: 180 } : { duration: 0 };
 </script>
 
-<div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}" in:fly={flyParams}>
+<div
+	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}"
+	in:fly={{ x: animate ? (isOwn ? 16 : -16) : 0, y: animate ? 8 : 0, duration: animate ? 180 : 0 }}
+>
 	{#if !isOwn}
 		<!-- avatar -->
 	{/if}

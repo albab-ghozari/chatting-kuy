@@ -27,6 +27,7 @@
 	let typingUsers = new SvelteSet();
 	let typingTimers = {};
 	let lastConvId = null;
+	let newMessageIds = new Set(); // track pesan baru untuk animasi
 
 	$: isTyping = typingUsers.size > 0;
 

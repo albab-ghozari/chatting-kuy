@@ -224,6 +224,21 @@
 		activeConversation = conv;
 		mobileView = 'chat';
 		conversations = conversations.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c));
+		// Update cache isRead saat buka conversation — pesan masuk jadi terbaca
+		updateCacheIsRead(conv.id);
+	}
+
+	// Update cache saat pesan dibaca — supaya saat balik ke chat tidak jadi biru lagi
+	function updateCacheIsRead(conversationId) {
+		messagesCache.update((cache) => {
+			if (!cache[conversationId]) return cache;
+			return {
+				...cache,
+				[conversationId]: cache[conversationId].map((m) =>
+					Number(m.sender?.id) !== Number(currentUser?.id) ? { ...m, isRead: true } : m
+				)
+			};
+		});
 	}
 
 	function backToSidebar() {
@@ -293,7 +308,7 @@
 			let cache = {};
 			messagesCache.subscribe((v) => (cache = v))();
 			if (cache[conversationId]) {
-				if (chatWindow) chatWindow.setMessages(cache[conversationId]);
+				if (chatWindow) chatWindow.setMessages(cache[conversationId], true);
 				return;
 			}
 

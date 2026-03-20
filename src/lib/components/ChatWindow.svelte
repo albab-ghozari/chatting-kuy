@@ -44,12 +44,12 @@
 	}
 
 	// Parent kirim messages awal lewat prop ini
-	export function setMessages(msgs) {
-		// Pakai isRead dari server — jangan override
+	export function setMessages(msgs, fromCache = false) {
 		messages = msgs;
 		loading = false;
-		if (conversation?.id && currentUserId) {
-			// Mark read di server — UI centang biru update via handleMessagesRead
+		// Hanya mark read saat pertama load dari API, bukan dari cache
+		// Ini mencegah centang biru muncul saat balik dari chat lain
+		if (!fromCache && conversation?.id && currentUserId) {
 			emitMarkRead(conversation.id, currentUserId);
 		}
 	}

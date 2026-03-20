@@ -1,6 +1,4 @@
 <script>
-	import { onMount } from 'svelte';
-
 	export let message;
 	export let currentUserId;
 	export let animate = false;
@@ -9,14 +7,13 @@
 	$: isOptimistic = typeof message.id === 'string' && message.id.startsWith('opt-');
 	$: isRead = message.isRead ?? false;
 
-	// Freeze animasi saat mount — tidak berubah saat isRead update
-	let animateClass = '';
-	onMount(() => {
-		if (animate) {
-			const own = message.sender.id === currentUserId;
-			animateClass = own ? 'msg-enter-right' : 'msg-enter-left';
-		}
-	});
+	// Freeze saat komponen dibuat — evaluate sekali, tidak reactive
+	// Pakai IIFE agar tidak bergantung pada reactive system
+	const animateClass = (() => {
+		if (!animate) return '';
+		const own = message.sender.id === currentUserId;
+		return own ? 'msg-enter-right' : 'msg-enter-left';
+	})();
 
 	function formatTime(dateStr) {
 		return new Date(dateStr).toLocaleTimeString('id-ID', {

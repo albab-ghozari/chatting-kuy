@@ -1,6 +1,7 @@
 <script>
-	export let message;
+	import { fly } from 'svelte/transition';
 
+	export let message;
 	export let currentUserId;
 
 	$: isOwn = message.sender.id === currentUserId;
@@ -15,7 +16,10 @@
 	}
 </script>
 
-<div class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}">
+<div
+	class="flex items-end gap-2 {isOwn ? 'flex-row-reverse' : 'flex-row'}"
+	in:fly={{ x: isOwn ? 20 : -20, y: 8, duration: 200, opacity: 0 }}
+>
 	{#if !isOwn}
 		<!-- <Avatar name={message.sender.username} src={message.sender.avatar ?? null} size="sm" /> -->
 	{/if}
@@ -37,7 +41,7 @@
 			{message.content}
 		</div>
 
-		<!-- Timestamp + ceklis (hanya untuk pesan sendiri) -->
+		<!-- Timestamp + ceklis -->
 		<div class="flex items-center gap-1 px-1">
 			<span class="text-[10px] text-gray-400">
 				{formatTime(message.createdAt)}
@@ -45,7 +49,6 @@
 
 			{#if isOwn}
 				{#if isOptimistic}
-					<!-- Pesan belum terkirim ke server — jam saja -->
 					<svg class="h-3 w-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path
 							stroke-linecap="round"
@@ -55,7 +58,6 @@
 						/>
 					</svg>
 				{:else if isRead}
-					<!-- ✓✓ Biru — sudah dibaca -->
 					<span class="flex -space-x-1">
 						<svg
 							class="h-3 w-3 text-blue-500"
@@ -85,7 +87,6 @@
 						</svg>
 					</span>
 				{:else}
-					<!-- ✓✓ Abu — terkirim tapi belum dibaca -->
 					<span class="flex -space-x-1">
 						<svg
 							class="h-3 w-3 text-gray-400"

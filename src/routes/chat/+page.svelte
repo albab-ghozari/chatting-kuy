@@ -5,6 +5,7 @@
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { authStore } from '$lib/stores/auth.js';
+	import { conversationsStore, conversationsLoaded } from '$lib/stores/chatStore.js';
 	import { conversationApi, messageApi } from '$lib/api.js';
 	import {
 		connectSocket,
@@ -20,6 +21,7 @@
 
 	let currentUser = null;
 	let conversations = [];
+	let _storeUnsub = null;
 	let activeConversation = null;
 	let chatWindow;
 	let loadingConversations = false;
@@ -141,19 +143,10 @@
 			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
 
-		// Fix iOS Safari keyboard — visualViewport
-		if (typeof window !== 'undefined' && window.visualViewport) {
-			const vv = window.visualViewport;
-			const update = () => {
-				const el = document.querySelector('.chat-page-root');
-				if (!el) return;
-				const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
-				el.style.bottom = Math.max(0, offsetBottom) + 'px';
-				el.style.top = vv.offsetTop + 'px';
-			};
-			vv.addEventListener('resize', update);
-			vv.addEventListener('scroll', update);
-		}
+		// Sync dari store ke local state
+		_storeUnsub = conversationsStore.subscribe((val) => {
+			if (val.length > 0) conversations = val;
+		});
 
 		// Baru connect dan load data
 		await connectSocket(currentUser.id);
@@ -161,6 +154,7 @@
 	});
 
 	onDestroy(async () => {
+		if (_storeUnsub) _storeUnsub();
 		await offSocketEvent('receive_message', handleGlobalMessage);
 		await offSocketEvent('typing', handleGlobalTyping);
 		await offSocketEvent('stop_typing', handleGlobalStopTyping);
@@ -171,7 +165,14 @@
 		disconnectSocket();
 	});
 
-	async function loadConversations() {
+	async function loadConversations(force = false) {
+		// Kalau sudah pernah load dan tidak dipaksa — pakai data dari store
+		let isLoaded = false;
+		conversationsLoaded.subscribe((v) => (isLoaded = v))();
+		if (isLoaded && !force) {
+			loadingConversations = false;
+			return;
+		}
 		try {
 			loadingConversations = true;
 			const data = await conversationApi.getAll();
@@ -180,6 +181,8 @@
 				time: formatPreviewTime(c.lastMessageAt),
 				unread: c.unread ?? 0
 			}));
+			conversationsStore.set(conversations);
+			conversationsLoaded.set(true);
 			for (const conv of conversations) {
 				await joinRoom(conv.id);
 			}
@@ -203,6 +206,9 @@
 		mobileView = 'sidebar';
 		activeConversation = null;
 	}
+
+	// Sync conversations ke store setiap kali berubah
+	$: conversationsStore.set(conversations);
 
 	function handleSend(e) {
 		const { content } = e.detail;

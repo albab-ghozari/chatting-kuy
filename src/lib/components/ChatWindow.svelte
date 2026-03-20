@@ -45,13 +45,11 @@
 
 	// Parent kirim messages awal lewat prop ini
 	export function setMessages(msgs) {
-		// Semua pesan dari orang lain langsung isRead: true
-		// karena user sedang membuka conversation ini
-		messages = msgs.map((m) =>
-			Number(m.sender?.id) !== Number(currentUserId) ? { ...m, isRead: true } : m
-		);
+		// Pakai isRead dari server — jangan override
+		messages = msgs;
 		loading = false;
 		if (conversation?.id && currentUserId) {
+			// Mark read di server — UI centang biru update via handleMessagesRead
 			emitMarkRead(conversation.id, currentUserId);
 		}
 	}

@@ -22,9 +22,9 @@
 	let isTyping = false;
 	let typingTimer;
 	let sending = false;
-	let showGroupInfo = false; // toggle panel info grup
+	// showGroupInfo hanya untuk desktop — mobile dihandle oleh +page.svelte via mobileView
+	let showGroupInfo = false;
 
-	// Data grup bisa diupdate secara lokal setelah admin edit
 	let localConversation = null;
 	$: localConversation = conversation;
 
@@ -86,8 +86,7 @@
 		dispatch('messagesread', { conversationId });
 	}
 
-	// Socket event: grup diupdate oleh admin
-	function handleGroupUpdated(data) {
+	function handleGroupUpdatedSocket(data) {
 		if (Number(data.id) !== Number(localConversation?.id)) return;
 		localConversation = { ...localConversation, ...data };
 		dispatch('groupUpdated', localConversation);
@@ -98,7 +97,7 @@
 		await onSocketEvent('typing', handleTypingEvent);
 		await onSocketEvent('stop_typing', handleStopTypingEvent);
 		await onSocketEvent('messages_read', handleMarkRead);
-		await onSocketEvent('group_updated', handleGroupUpdated);
+		await onSocketEvent('group_updated', handleGroupUpdatedSocket);
 	});
 
 	onDestroy(async () => {
@@ -106,7 +105,7 @@
 		await offSocketEvent('typing', handleTypingEvent);
 		await offSocketEvent('stop_typing', handleStopTypingEvent);
 		await offSocketEvent('messages_read', handleMarkRead);
-		await offSocketEvent('group_updated', handleGroupUpdated);
+		await offSocketEvent('group_updated', handleGroupUpdatedSocket);
 		clearTimeout(typingTimer);
 	});
 
@@ -187,23 +186,23 @@
 		};
 		dispatch('groupUpdated', localConversation);
 	}
-
-	function handleLeft() {
-		dispatch('left');
-	}
 </script>
 
-<!-- Layout utama: chat + panel info (side by side saat panel terbuka) -->
+<!--
+	ChatWindow adalah komponen CHAT saja.
+	Panel info grup di desktop dirender di sini (md:block).
+	Panel info grup di mobile dirender langsung di +page.svelte via mobileView.
+	Tidak ada wrapper dengan overflow-hidden agar tidak menghalangi touch event di mobile.
+-->
 <div class="flex flex-1 overflow-hidden">
 	<!-- Kolom chat -->
 	<div class="flex flex-1 flex-col overflow-hidden">
 
-		<!-- Chat Header (Desktop only) -->
+		<!-- Header desktop only -->
 		<div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 			{#if localConversation}
-				<!-- Avatar / GroupAvatar -->
 				{#if localConversation.isGroup}
-					<button on:click={() => (showGroupInfo = !showGroupInfo)} class="shrink-0 transition-opacity hover:opacity-80" title="Info grup">
+					<button on:click={() => (showGroupInfo = !showGroupInfo)} class="shrink-0 transition-opacity hover:opacity-80">
 						{#if localConversation.groupAvatar}
 							<img src={localConversation.groupAvatar} alt="grup" class="h-8 w-8 rounded-full object-cover" />
 						{:else}
@@ -213,55 +212,36 @@
 				{:else}
 					<Avatar name={localConversation.name} src={localConversation.otherAvatar ?? null} size="sm" online={isOnline} />
 				{/if}
-
 				<div class="flex-1 min-w-0">
 					{#if localConversation.isGroup}
-						<button on:click={() => (showGroupInfo = !showGroupInfo)} class="truncate text-left text-sm font-semibold text-[#0d0f1e] hover:underline">
-							{localConversation.name}
-						</button>
+						<button on:click={() => (showGroupInfo = !showGroupInfo)} class="truncate text-left text-sm font-semibold text-[#0d0f1e] hover:underline">{localConversation.name}</button>
 						<p class="text-xs text-gray-400">{(localConversation.members ?? []).length} anggota · klik untuk info</p>
 					{:else}
 						<p class="truncate text-sm font-semibold text-[#0d0f1e]">{localConversation.name}</p>
-						{#if isOnline}
-							<p class="text-xs font-medium text-emerald-500">Online</p>
-						{:else if lastSeen}
-							<p class="text-xs text-gray-400">{formatLastSeen(lastSeen)}</p>
-						{/if}
+						{#if isOnline}<p class="text-xs font-medium text-emerald-500">Online</p>
+						{:else if lastSeen}<p class="text-xs text-gray-400">{formatLastSeen(lastSeen)}</p>{/if}
 					{/if}
 				</div>
-
-				<!-- Tombol info grup di kanan header -->
 				{#if localConversation.isGroup}
-					<button
-						on:click={() => (showGroupInfo = !showGroupInfo)}
-						class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100 {showGroupInfo ? 'bg-gray-100 text-[#0d0f1e]' : ''}"
-						title="Info grup"
-					>
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-						</svg>
+					<button on:click={() => (showGroupInfo = !showGroupInfo)} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 {showGroupInfo ? 'bg-gray-100 text-[#0d0f1e]' : ''}">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 					</button>
 				{/if}
 			{/if}
 		</div>
 
-		<!-- Messages Area -->
+		<!-- Messages -->
 		<div bind:this={messagesContainer} class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4 pb-2">
 			{#if loadingMessages}
 				{#each { length: 6 } as _, i (i)}
 					<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
-						<div class="animate-pulse rounded-2xl bg-gray-200
-							{i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'}
-							{i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"
-						></div>
+						<div class="animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'} {i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"></div>
 					</div>
 				{/each}
 			{:else if messages.length === 0 && !isTyping}
 				<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 					<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
-						<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-						</svg>
+						<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
 					</div>
 					<p class="text-sm text-gray-400">Belum ada pesan</p>
 					<p class="text-xs text-gray-300">Kirim pesan pertama ke {localConversation?.name ?? 'teman'}!</p>
@@ -275,16 +255,10 @@
 							<div class="h-px flex-1 bg-gray-100"></div>
 						</div>
 					{:else}
-						<MessageBubble
-							message={item.msg}
-							{currentUserId}
-							animate={true}
-							isGroup={localConversation.isGroup ?? false}
-						/>
+						<MessageBubble message={item.msg} {currentUserId} animate={true} isGroup={localConversation.isGroup ?? false} />
 					{/if}
 				{/each}
 			{/if}
-
 			{#if isTyping}
 				<div class="flex shrink-0 items-end gap-2 pt-1">
 					<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
@@ -296,19 +270,14 @@
 			{/if}
 		</div>
 
-		<!-- Input Area -->
+		<!-- Input -->
 		<div class="shrink-0 px-4 pb-4 pt-2">
-			<MessageInput
-				bind:value={inputValue}
-				disabled={sending}
-				conversationId={localConversation?.id}
-				{currentUserId}
-				on:send={handleSend}
-			/>
+			<MessageInput bind:value={inputValue} disabled={sending} conversationId={localConversation?.id} {currentUserId} on:send={handleSend} />
 		</div>
 	</div>
 
-	<!-- Panel info grup (slide in dari kanan, desktop only) -->
+	<!-- Panel info grup — DESKTOP ONLY (md:block) -->
+	<!-- Mobile dihandle sepenuhnya oleh +page.svelte via mobileView === 'groupinfo' -->
 	{#if showGroupInfo && localConversation?.isGroup}
 		<div class="hidden w-72 shrink-0 border-l border-gray-100 md:block">
 			<GroupInfoPanel
@@ -317,7 +286,7 @@
 				on:close={() => (showGroupInfo = false)}
 				on:updated={handleGroupUpdatedFromPanel}
 				on:memberRemoved={handleMemberRemoved}
-				on:left={handleLeft}
+				on:left={() => dispatch('left')}
 			/>
 		</div>
 	{/if}

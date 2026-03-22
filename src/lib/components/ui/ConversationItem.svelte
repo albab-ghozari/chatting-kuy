@@ -13,9 +13,16 @@
 	export let online = false;
 	export let isGroup = false;
 	export let groupMembers = [];
-	export let groupAvatar = null; // foto grup jika ada
+	export let groupAvatar = null;
 
 	const dispatch = createEventDispatcher();
+
+	// Tampilkan preview yang bersih — foto jangan tampil raw base64
+	$: preview = (() => {
+		if (!lastMessage) return '';
+		if (lastMessage.startsWith('[image]')) return '📷 Foto';
+		return lastMessage;
+	})();
 </script>
 
 <button
@@ -25,7 +32,6 @@
 >
 	<!-- Avatar -->
 	{#if isGroup}
-		<!-- Pass groupAvatar ke GroupAvatar agar foto tampil di sidebar -->
 		<GroupAvatar members={groupMembers} {groupAvatar} size="md" />
 	{:else}
 		<Avatar name={name} src={avatar} size="md" {online} />
@@ -44,7 +50,7 @@
 				{#if isTyping}
 					<span class="italic text-emerald-500">mengetik...</span>
 				{:else}
-					{lastMessage ?? ''}
+					{preview}
 				{/if}
 			</span>
 			{#if unread > 0}

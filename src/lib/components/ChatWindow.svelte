@@ -1,728 +1,269 @@
 <script>
-	import { onMount, onDestroy, tick } from 'svelte';
-	import { goto } from '$app/navigation';
-	import { notify, requestNotificationPermission, subscribePush } from '$lib/notification.js';
-
-	import ToastContainer from '$lib/components/ToastContainer.svelte';
-	import { authStore } from '$lib/stores/auth.js';
-	import { conversationsStore, conversationsLoaded, messagesCache } from '$lib/stores/chatStore.js';
-	import { conversationApi, messageApi } from '$lib/api.js';
+	import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
 	import {
-		connectSocket,
-		disconnectSocket,
 		onSocketEvent,
 		offSocketEvent,
-		joinRoom
+		sendSocketMessage,
+		emitMarkRead
 	} from '$lib/socket.js';
-	import ConversationItem from '$lib/components/ui/ConversationItem.svelte';
+	import { messageApi } from '$lib/api.js';
+	import MessageBubble from '$lib/components/ui/MessageBubble.svelte';
+	import MessageInput from '$lib/components/ui/MessageInput.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
-	import ChatWindow from '$lib/components/ChatWindow.svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 
-	let currentUser = null;
-	let conversations = [];
-	let _storeUnsub = null;
-	let activeConversation = null;
-	let chatWindow;
-	let loadingConversations = false;
-	let searchQuery = '';
-	let showNewChat = false;
-	let userSearchQuery = '';
-	let userResults = [];
-	let allUsers = [];
-	let searchingUsers = false;
-	let mobileView = 'sidebar';
-	let onlineUserIds = new SvelteSet();
+	export let conversation = null;
+	export let currentUserId = null;
+	export let isOnline = false;
 
-	let sidebarTyping = {};
-	let typingTimers = {};
+	const dispatch = createEventDispatcher();
 
-	$: filtered = conversations
-		.slice()
-		.sort((a, b) => {
-			const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-			const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-			return tb - ta;
-		})
-		.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+	let messages = [];
+	let loadingMessages = false;
+	let messagesContainer;
+	let inputValue = '';
+	let isTyping = false;
+	let typingTimer;
+	let sending = false;
 
-	function formatPreviewTime(dateStr) {
-		if (!dateStr) return '';
-		const d = new Date(dateStr);
-		const now = new Date();
-		const diffDays = Math.floor((now - d) / 86400000);
-		if (diffDays === 0)
-			return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-		if (diffDays === 1) return 'Kemarin';
-		if (diffDays < 7) return d.toLocaleDateString('id-ID', { weekday: 'short' });
-		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
-	}
-
-	function handleGlobalTyping({ userId, room }) {
-		if (userId === currentUser?.id) return;
-		const convId = Number(room);
-		sidebarTyping = { ...sidebarTyping, [convId]: true };
-		clearTimeout(typingTimers[convId]);
-		typingTimers[convId] = setTimeout(() => {
-			sidebarTyping = { ...sidebarTyping, [convId]: false };
-		}, 3000);
-	}
-
-	function handleGlobalStopTyping({ userId, room }) {
-		if (userId === currentUser?.id) return;
-		sidebarTyping = { ...sidebarTyping, [Number(room)]: false };
-	}
-
-	function handleGlobalMessage(msg) {
-		const convId = Number(msg.conversationId);
-		const isActiveConv = Number(activeConversation?.id) === convId;
-		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
-
-		// Update cache messages
-		messagesCache.update((cache) => {
-			const existing = cache[convId] ?? [];
-			// Hindari duplikat
-			if (existing.find((m) => m.id === msg.id)) return cache;
-			return { ...cache, [convId]: [...existing, msg] };
-		});
-
-		setConversations(
-			conversations.map((c) => {
-				if (Number(c.id) !== convId) return c;
-				return {
-					...c,
-					lastMessage: msg.content,
-					lastMessageAt: msg.createdAt,
-					time: formatPreviewTime(msg.createdAt),
-					unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
-				};
-			})
-		);
-
-		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
-			const conv = conversations.find((c) => Number(c.id) === convId);
-			notify({
-				senderName: msg.sender?.username ?? 'Pesan baru',
-				message: msg.content,
-				avatar: conv?.otherAvatar ?? null,
-				onClickCb: () => {
-					if (conv) selectConversation(conv);
-				}
-			});
+	// Dipanggil dari parent (+page.svelte) lewat bind:this
+	export function setMessages(msgs, shouldMarkRead = true) {
+		messages = msgs ?? [];
+		if (shouldMarkRead && conversation?.id && currentUserId) {
+			emitMarkRead(conversation.id, currentUserId);
 		}
+		scrollToBottom();
+	}
+
+	$: if (conversation?.id) {
+		handleConversationChange();
+	}
+
+	async function handleConversationChange() {
+		messages = [];
+		isTyping = false;
+		loadingMessages = true;
+		await tick();
+		dispatch('requestmessages', { conversationId: conversation.id });
+		loadingMessages = false;
+	}
+
+	function handleReceiveMessage(msg) {
+		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
+
+		// Hindari duplikat
+		if (messages.find((m) => m.id === msg.id)) return;
+
+		// Ganti optimistic message jika ada
+		const optIdx = messages.findIndex(
+			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') && m.content === msg.content
+		);
+		if (optIdx !== -1) {
+			messages = messages.map((m, i) => (i === optIdx ? msg : m));
+		} else {
+			messages = [...messages, msg];
+		}
+
+		dispatch('newmessage', msg);
+
+		// Tandai terbaca jika pesan dari lawan
+		if (Number(msg.sender?.id) !== Number(currentUserId)) {
+			emitMarkRead(conversation.id, currentUserId);
+		}
+
+		scrollToBottom();
+	}
+
+	function handleTypingEvent({ userId, room }) {
+		if (Number(userId) === Number(currentUserId)) return;
+		if (Number(room) !== Number(conversation?.id)) return;
+		isTyping = true;
+		clearTimeout(typingTimer);
+		typingTimer = setTimeout(() => (isTyping = false), 3000);
+	}
+
+	function handleStopTypingEvent({ userId, room }) {
+		if (Number(userId) === Number(currentUserId)) return;
+		if (Number(room) !== Number(conversation?.id)) return;
+		isTyping = false;
+	}
+
+	function handleMarkRead({ conversationId }) {
+		if (Number(conversationId) !== Number(conversation?.id)) return;
+		dispatch('messagesread', { conversationId });
 	}
 
 	onMount(async () => {
-		try {
-			if (typeof Notification !== 'undefined') {
-				const token = localStorage.getItem('token');
-				if (Notification.permission === 'default') {
-					const granted = await requestNotificationPermission();
-					if (granted) await subscribePush(token);
-				} else if (Notification.permission === 'granted') {
-					await requestNotificationPermission();
-					await subscribePush(token);
-				}
-			}
-		} catch (e) {
-			console.log('Notification not supported:', e.message);
-		}
-
-		const token = localStorage.getItem('token');
-		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
-		if (!token || !user) {
-			goto('/');
-			return;
-		}
-		currentUser = user;
-		if (user.avatar) currentUser = { ...user };
-
-		// Pasang listener DULU sebelum connect agar tidak race condition
-		await onSocketEvent('receive_message', handleGlobalMessage);
-		await onSocketEvent('typing', handleGlobalTyping);
-		await onSocketEvent('stop_typing', handleGlobalStopTyping);
-		await onSocketEvent('new_user', handleNewUser);
-		await onSocketEvent('user_online', ({ userId }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
-		});
-		await onSocketEvent('user_offline', ({ userId }) => {
-			onlineUserIds.delete(Number(userId));
-			onlineUserIds = new SvelteSet(onlineUserIds);
-		});
-		await onSocketEvent('online_users', ({ userIds }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
-		});
-
-		// Ambil data dari store langsung — tidak perlu subscribe
-		let storedConvs = [];
-		conversationsStore.subscribe((val) => (storedConvs = val))();
-		if (storedConvs.length > 0) conversations = storedConvs;
-
-		// Fix iOS Safari keyboard — visualViewport
-		if (typeof window !== 'undefined' && window.visualViewport) {
-			const vv = window.visualViewport;
-			const update = () => {
-				const el = document.querySelector('.chat-page-root');
-				if (!el) return;
-				const offsetBottom = window.innerHeight - vv.height - vv.offsetTop;
-				el.style.bottom = Math.max(0, offsetBottom) + 'px';
-				el.style.top = vv.offsetTop + 'px';
-			};
-			vv.addEventListener('resize', update);
-			vv.addEventListener('scroll', update);
-		}
-
-		// Baru connect dan load data
-		await connectSocket(currentUser.id);
-		await loadConversations();
-
-		// Saat app kembali ke foreground — refresh data yang missed
-		let _wasHidden = false;
-		const onVisibilityChange = async () => {
-			if (document.visibilityState === 'hidden') {
-				_wasHidden = true;
-				return;
-			}
-			if (!_wasHidden) return;
-			_wasHidden = false;
-			await refreshAfterBackground();
-		};
-		document.addEventListener('visibilitychange', onVisibilityChange);
-
-		// Saat socket reconnect — refresh data
-		const onSocketReconnect = async () => {
-			await refreshAfterBackground();
-		};
-		window.addEventListener('socket-reconnected', onSocketReconnect);
-
-		// Simpan untuk cleanup
-		_cleanupHandlers = () => {
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-			window.removeEventListener('socket-reconnected', onSocketReconnect);
-		};
+		await onSocketEvent('receive_message', handleReceiveMessage);
+		await onSocketEvent('typing', handleTypingEvent);
+		await onSocketEvent('stop_typing', handleStopTypingEvent);
+		await onSocketEvent('messages_read', handleMarkRead);
 	});
-
-	let _cleanupHandlers = null;
-
-	// Refresh conversations dan messages aktif setelah kembali ke foreground
-	async function refreshAfterBackground() {
-		// Tunggu sebentar agar socket selesai reconnect dan server sync
-		await new Promise((r) => setTimeout(r, 500));
-
-		// Refresh conversation list
-		await loadConversations(true);
-
-		// Kalau ada conversation aktif — hapus cache lama dan fetch fresh dari API
-		if (activeConversation) {
-			try {
-				// Hapus cache conversation ini agar tidak pakai data stale
-				messagesCache.update((c) => {
-					const newCache = { ...c };
-					delete newCache[activeConversation.id];
-					return newCache;
-				});
-				const msgs = await messageApi.getByConversation(activeConversation.id);
-				messagesCache.update((c) => ({ ...c, [activeConversation.id]: msgs }));
-				if (chatWindow) chatWindow.setMessages(msgs, false);
-			} catch (e) {
-				console.error('refresh messages error:', e);
-			}
-		}
-	}
 
 	onDestroy(async () => {
-		if (_storeUnsub) _storeUnsub();
-		if (_cleanupHandlers) _cleanupHandlers();
-		await offSocketEvent('receive_message', handleGlobalMessage);
-		await offSocketEvent('typing', handleGlobalTyping);
-		await offSocketEvent('stop_typing', handleGlobalStopTyping);
-		await offSocketEvent('new_user', handleNewUser);
-		await offSocketEvent('user_online');
-		await offSocketEvent('user_offline');
-		await offSocketEvent('online_users');
-		disconnectSocket();
+		await offSocketEvent('receive_message', handleReceiveMessage);
+		await offSocketEvent('typing', handleTypingEvent);
+		await offSocketEvent('stop_typing', handleStopTypingEvent);
+		await offSocketEvent('messages_read', handleMarkRead);
+		clearTimeout(typingTimer);
 	});
 
-	async function loadConversations(force = false) {
-		// Kalau sudah pernah load dan tidak dipaksa — pakai data dari store
-		let isLoaded = false;
-		conversationsLoaded.subscribe((v) => (isLoaded = v))();
-		if (isLoaded && !force) {
-			loadingConversations = false;
-			return;
-		}
-		try {
-			loadingConversations = true;
-			const data = await conversationApi.getAll();
-			conversations = data.map((c) => ({
-				...c,
-				time: formatPreviewTime(c.lastMessageAt),
-				unread: c.unread ?? 0
-			}));
-			conversationsLoaded.set(true);
-			conversationsStore.set(conversations);
-			for (const conv of conversations) {
-				await joinRoom(conv.id);
-			}
-		} catch (e) {
-			if (e.message?.includes('401')) {
-				authStore.logout();
-				goto('/');
-			}
-		} finally {
-			loadingConversations = false;
-		}
-	}
-
-	async function selectConversation(conv) {
-		activeConversation = conv;
-		mobileView = 'chat';
-		conversations = conversations.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c));
-		// Update cache isRead saat buka conversation — pesan masuk jadi terbaca
-		updateCacheIsRead(conv.id);
-	}
-
-	// Update cache saat pesan dibaca — supaya saat balik ke chat tidak jadi biru lagi
-	function updateCacheIsRead(conversationId) {
-		messagesCache.update((cache) => {
-			if (!cache[conversationId]) return cache;
-			return {
-				...cache,
-				[conversationId]: cache[conversationId].map((m) =>
-					Number(m.sender?.id) !== Number(currentUser?.id) ? { ...m, isRead: true } : m
-				)
-			};
-		});
-	}
-
-	function backToSidebar() {
-		mobileView = 'sidebar';
-		activeConversation = null;
-	}
-
-	// Helper — update conversations dan sync ke store sekaligus
-	function setConversations(val) {
-		conversations = val;
-		conversationsStore.set(val);
-	}
-
-	function handleSend(e) {
+	async function handleSend(e) {
 		const { content } = e.detail;
-		if (!content || !activeConversation) return;
-		conversations = conversations.map((c) =>
-			c.id === activeConversation.id
-				? {
-						...c,
-						lastMessage: content,
-						lastMessageAt: new Date().toISOString(),
-						time: formatPreviewTime(new Date().toISOString())
-					}
-				: c
-		);
-	}
+		if (!content?.trim() || !conversation?.id || sending) return;
 
-	function handleNewMessage(e) {
-		const msg = e.detail;
-		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
-		const isActiveConv = Number(activeConversation?.id) === Number(msg.conversationId);
-		conversations = conversations.map((c) => {
-			if (Number(c.id) !== Number(msg.conversationId)) return c;
-			return {
-				...c,
-				lastMessage: msg.content,
-				lastMessageAt: msg.createdAt,
-				time: formatPreviewTime(msg.createdAt),
-				unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
-			};
-		});
-	}
+		sending = true;
 
-	async function handleNewUser(user) {
-		if (Number(user.id) === Number(currentUser?.id)) return;
-		allUsers = [...allUsers.filter((u) => u.id !== user.id), user];
-		if (showNewChat && userSearchQuery.trim()) {
-			searchingUsers = true;
-			try {
-				userResults = await conversationApi.searchUsers(userSearchQuery);
-			} catch (e) {
-				console.error(e);
-			} finally {
-				searchingUsers = false;
-			}
-		}
-	}
+		// Optimistic UI
+		const optimisticId = `opt-${Date.now()}`;
+		const optimisticMsg = {
+			id: optimisticId,
+			content,
+			conversationId: conversation.id,
+			createdAt: new Date().toISOString(),
+			isRead: false,
+			sender: { id: currentUserId, username: 'me' }
+		};
+		messages = [...messages, optimisticMsg];
+		dispatch('send', { content });
+		scrollToBottom();
 
-	async function handleRequestMessages(e) {
-		const { conversationId } = e.detail;
 		try {
-			// Tunggu DOM update dulu
-			await tick();
-
-			// Cek cache dulu
-			let cache = {};
-			messagesCache.subscribe((v) => (cache = v))();
-			if (cache[conversationId]) {
-				if (chatWindow) chatWindow.setMessages(cache[conversationId], true);
-				return;
-			}
-
-			// Tidak ada di cache — fetch dari API
-			const msgs = await messageApi.getByConversation(conversationId);
-			messagesCache.update((c) => ({ ...c, [conversationId]: msgs }));
-			if (chatWindow) chatWindow.setMessages(msgs);
+			await sendSocketMessage({
+				content,
+				senderId: currentUserId,
+				conversationId: conversation.id
+			});
+			// Juga persist ke DB lewat REST (fallback keandalan)
+			await messageApi.send(conversation.id, content);
 		} catch (err) {
-			console.error('fetch messages error:', err);
-		}
-	}
-
-	// Update cache saat lawan membaca pesan (dapat event dari ChatWindow)
-	function handleMessagesRead(e) {
-		const { conversationId } = e.detail;
-		messagesCache.update((cache) => {
-			if (!cache[conversationId]) return cache;
-			return {
-				...cache,
-				[conversationId]: cache[conversationId].map((m) =>
-					Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m
-				)
-			};
-		});
-	}
-
-	let searchTimeout;
-	async function handleUserSearch() {
-		clearTimeout(searchTimeout);
-		const q = userSearchQuery.trim().toLowerCase();
-		if (!q) {
-			userResults = [];
-			return;
-		}
-
-		const fromCache = allUsers.filter(
-			(u) => Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q)
-		);
-		if (fromCache.length > 0) userResults = fromCache;
-
-		searchTimeout = setTimeout(async () => {
-			searchingUsers = true;
-			try {
-				const results = await conversationApi.searchUsers(userSearchQuery);
-				for (const u of results) {
-					if (!allUsers.find((x) => x.id === u.id)) allUsers = [...allUsers, u];
-				}
-				const apiIds = new Set(results.map((u) => u.id));
-				const cacheOnly = allUsers.filter(
-					(u) =>
-						!apiIds.has(u.id) &&
-						Number(u.id) !== Number(currentUser?.id) &&
-						u.username.toLowerCase().includes(q)
-				);
-				userResults = [...results, ...cacheOnly];
-			} finally {
-				searchingUsers = false;
-			}
-		}, 300);
-	}
-
-	let startingChat = false;
-
-	async function startChat(targetUser) {
-		if (startingChat) return;
-		startingChat = true;
-		try {
-			const conv = await conversationApi.create(targetUser.id);
-			await loadConversations();
-			showNewChat = false;
-			userSearchQuery = '';
-			userResults = [];
-			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? {
-				...conv,
-				time: '',
-				unread: 0
-			};
-			await selectConversation(found);
-		} catch (e) {
-			console.error(e);
+			console.error('send error:', err);
+			// Hapus optimistic message kalau gagal
+			messages = messages.filter((m) => m.id !== optimisticId);
 		} finally {
-			startingChat = false;
+			sending = false;
 		}
 	}
+
+	async function scrollToBottom() {
+		await tick();
+		if (messagesContainer) {
+			messagesContainer.scrollTop = messagesContainer.scrollHeight;
+		}
+	}
+
+	function formatDateHeader(dateStr) {
+		const d = new Date(dateStr);
+		const now = new Date();
+		const diffDays = Math.floor((now - d) / 86400000);
+		if (diffDays === 0) return 'Hari ini';
+		if (diffDays === 1) return 'Kemarin';
+		if (diffDays < 7) return d.toLocaleDateString('id-ID', { weekday: 'long' });
+		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+	}
+
+	// Kelompokkan pesan berdasarkan tanggal
+	$: groupedMessages = (() => {
+		const groups = [];
+		let lastDate = null;
+		for (const msg of messages) {
+			const dateKey = new Date(msg.createdAt).toDateString();
+			if (dateKey !== lastDate) {
+				groups.push({ type: 'date', label: formatDateHeader(msg.createdAt), key: dateKey });
+				lastDate = dateKey;
+			}
+			groups.push({ type: 'message', msg });
+		}
+		return groups;
+	})();
 </script>
 
-<svelte:head><title>Chat</title></svelte:head>
-
-<div
-	class="chat-page-root flex w-full overflow-hidden bg-white"
-	style="position:fixed;top:0;left:0;right:0;bottom:0;"
->
-	<!-- SIDEBAR -->
-	<aside
-		class="
-    flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
-    {mobileView === 'chat' ? 'hidden md:flex' : 'flex'}
-  "
-	>
-		<!-- Header -->
-		<div class="flex items-center justify-between px-4 pt-5 pb-3">
-			<h1 class="text-lg font-bold tracking-tight text-[#0d0f1e]">Pesan</h1>
-			<div class="flex items-center gap-1">
-				{#if currentUser}
-					<button
-						on:click={() => goto('/profile')}
-						class="transition-opacity hover:opacity-80"
-						title="Profil saya"
-					>
-						<Avatar name={currentUser.username} src={currentUser.avatar ?? null} size="sm" />
-					</button>
-				{/if}
-				<button
-					on:click={() => (showNewChat = !showNewChat)}
-					class="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-					title="Chat baru"
-				>
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 4v16m8-8H4"
-						/>
-					</svg>
-				</button>
-				<button
-					on:click={() => goto('/profile')}
-					class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100"
-					title="Profil & Pengaturan"
-				>
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-						/>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-						/>
-					</svg>
-				</button>
-			</div>
+<!-- Chat Header (Desktop) -->
+<div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
+	{#if conversation}
+		<div class="relative">
+			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="sm" />
+			{#if isOnline}
+				<span
+					class="absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400"
+				></span>
+			{/if}
 		</div>
+		<div class="flex-1 min-w-0">
+			<p class="truncate text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
+			<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
+				{isOnline ? '● Online' : '○ Offline'}
+			</p>
+		</div>
+	{/if}
+</div>
 
-		<!-- Panel new chat -->
-		{#if showNewChat}
-			<div class="mx-3 mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-				<p class="mb-2 text-xs font-semibold text-gray-500">Chat baru</p>
-				<input
-					type="text"
-					placeholder="Cari username..."
-					bind:value={userSearchQuery}
-					on:input={handleUserSearch}
-					class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm
-                 placeholder:text-gray-400 focus:border-[#0d0f1e] focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
-				/>
-				{#if searchingUsers}
-					<p class="mt-2 text-center text-xs text-gray-400">Mencari...</p>
-				{:else if userResults.length > 0}
-					<div class="mt-2 flex flex-col gap-0.5">
-						{#each userResults as u (u.id)}
-							<button
-								on:click={() => startChat(u)}
-								disabled={startingChat}
-								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50"
-							>
-								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
-								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
-								{#if startingChat}
-									<svg
-										class="h-4 w-4 shrink-0 animate-spin text-gray-400"
-										fill="none"
-										viewBox="0 0 24 24"
-									>
-										<circle
-											class="opacity-25"
-											cx="12"
-											cy="12"
-											r="10"
-											stroke="currentColor"
-											stroke-width="4"
-										/>
-										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-									</svg>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{:else if userSearchQuery}
-					<p class="mt-2 text-center text-xs text-gray-400">Tidak ditemukan</p>
-				{/if}
+<!-- Messages Area -->
+<div
+	bind:this={messagesContainer}
+	class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4"
+>
+	{#if loadingMessages}
+		<!-- Skeleton loading -->
+		{#each { length: 5 } as _, i (i)}
+			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
+				<div
+					class="h-10 w-[55%] animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0
+						? 'rounded-br-sm'
+						: 'rounded-bl-sm'}"
+				></div>
 			</div>
-		{/if}
-
-		<!-- Search -->
-		<div class="px-4 pb-3">
-			<div class="relative">
-				<svg
-					class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-				>
+		{/each}
+	{:else if messages.length === 0}
+		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
+				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						stroke-width="2"
-						d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+						stroke-width="1.5"
+						d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
 					/>
 				</svg>
-				<input
-					type="text"
-					placeholder="Cari percakapan..."
-					bind:value={searchQuery}
-					class="w-full rounded-xl bg-gray-100 py-2.5 pr-4 pl-9 text-sm text-[#0d0f1e]
-                 transition-all placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
-				/>
 			</div>
+			<p class="text-sm text-gray-400">Belum ada pesan</p>
+			<p class="text-xs text-gray-300">Kirim pesan pertama ke {conversation?.name ?? 'teman'}!</p>
 		</div>
-
-		<!-- Conversation list -->
-		<div class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-4">
-			{#if loadingConversations && conversations.length === 0}
-				{#each { length: 4 } as _, i (i)}
-					<div class="flex items-center gap-3 px-3 py-3">
-						<div class="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-200"></div>
-						<div class="flex flex-1 flex-col gap-1.5">
-							<div class="h-3 w-3/4 animate-pulse rounded bg-gray-200"></div>
-							<div class="h-2.5 w-1/2 animate-pulse rounded bg-gray-100"></div>
-						</div>
-					</div>
-				{/each}
-			{:else if filtered.length === 0}
-				<div class="flex flex-col items-center justify-center gap-2 py-16">
-					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100">
-						<svg
-							class="h-5 w-5 text-gray-400"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="1.5"
-								d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-							/>
-						</svg>
-					</div>
-					<p class="text-center text-xs text-gray-400">
-						{searchQuery ? 'Tidak ada hasil' : 'Belum ada percakapan'}
-					</p>
-					{#if !searchQuery}
-						<button
-							on:click={() => (showNewChat = true)}
-							class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70"
-						>
-							Mulai chat baru
-						</button>
-					{/if}
+	{:else}
+		{#each groupedMessages as item (item.type === 'date' ? item.key : item.msg.id)}
+			{#if item.type === 'date'}
+				<div class="flex items-center gap-3 py-1">
+					<div class="h-px flex-1 bg-gray-100"></div>
+					<span class="text-[10px] font-medium text-gray-400">{item.label}</span>
+					<div class="h-px flex-1 bg-gray-100"></div>
 				</div>
 			{:else}
-				{#each filtered as conv (conv.id)}
-					<ConversationItem
-						name={conv.name}
-						lastMessage={conv.lastMessage}
-						time={conv.time}
-						unread={conv.unread ?? 0}
-						active={activeConversation?.id === conv.id}
-						isTyping={sidebarTyping[Number(conv.id)] ?? false}
-						avatar={conv.otherAvatar ?? null}
-						online={onlineUserIds.has(Number(conv.otherUserId))}
-						on:click={() => selectConversation(conv)}
-					/>
-				{/each}
-			{/if}
-		</div>
-	</aside>
-
-	<!-- AREA CHAT -->
-	<main
-		class="
-    flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
-    {mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}
-  "
-	>
-		{#if activeConversation}
-			<!-- Header mobile -->
-			<div
-				class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
-				style="padding-top: max(12px, env(safe-area-inset-top))"
-			>
-				<button
-					on:click={backToSidebar}
-					aria-label="Kembali ke daftar percakapan"
-					class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-				>
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15 19l-7-7 7-7"
-						/>
-					</svg>
-				</button>
-				<Avatar
-					name={activeConversation.name}
-					src={activeConversation.otherAvatar ?? null}
-					size="sm"
+				<MessageBubble
+					message={item.msg}
+					{currentUserId}
+					animate={true}
 				/>
-				<div>
-					<p class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
-					<p
-						class="text-xs {onlineUserIds.has(Number(activeConversation?.otherUserId))
-							? 'font-medium text-emerald-500'
-							: 'text-gray-400'}"
-					>
-						{onlineUserIds.has(Number(activeConversation?.otherUserId)) ? '● online' : '○ offline'}
-					</p>
-				</div>
-			</div>
+			{/if}
+		{/each}
 
-			<ChatWindow
-				bind:this={chatWindow}
-				conversation={activeConversation}
-				currentUserId={currentUser?.id}
-				isOnline={onlineUserIds.has(Number(activeConversation?.otherUserId))}
-				on:send={handleSend}
-				on:newmessage={handleNewMessage}
-				on:requestmessages={handleRequestMessages}
-				on:messagesread={handleMessagesRead}
-			/>
-		{:else}
-			<div
-				class="hidden flex-1 flex-col items-center justify-center gap-3 px-8 text-center md:flex"
-			>
-				<div class="mb-2 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-					<svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="1.5"
-							d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-						/>
-					</svg>
+		{#if isTyping}
+			<div class="flex items-end gap-2">
+				<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
+					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:0ms"></span>
+					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:150ms"></span>
+					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:300ms"></span>
 				</div>
-				<p class="text-sm font-semibold text-gray-500">Pilih percakapan</p>
-				<p class="max-w-xs text-xs text-gray-400">
-					Pilih percakapan di kiri atau tekan <span class="font-semibold text-[#0d0f1e]">+</span> untuk
-					mulai chat baru.
-				</p>
 			</div>
 		{/if}
-	</main>
+	{/if}
 </div>
 
-<ToastContainer />
+<!-- Input Area -->
+<div class="shrink-0 px-4 pb-4 pt-2">
+	<MessageInput
+		bind:value={inputValue}
+		disabled={sending}
+		conversationId={conversation?.id}
+		{currentUserId}
+		on:send={handleSend}
+	/>
+</div>

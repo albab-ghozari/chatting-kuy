@@ -17,23 +17,16 @@
 	} from '$lib/socket.js';
 	import ConversationItem from '$lib/components/ui/ConversationItem.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import GroupAvatar from '$lib/components/ui/GroupAvatar.svelte';
 	import ChatWindow from '$lib/components/ChatWindow.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	const LAST_SEEN_KEY = 'chatting_kuy_last_seen';
-
 	function loadLastSeenFromStorage() {
-		try {
-			return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) ?? '{}');
-		} catch {
-			return {};
-		}
+		try { return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) ?? '{}'); } catch { return {}; }
 	}
-
 	function saveLastSeenToStorage(map) {
-		try {
-			localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(map));
-		} catch {}
+		try { localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(map)); } catch {}
 	}
 
 	let currentUser = null;
@@ -43,19 +36,22 @@
 	let chatWindow;
 	let loadingConversations = false;
 	let searchQuery = '';
+	let mobileView = 'sidebar';
+	let onlineUserIds = new SvelteSet();
+	let lastSeenMap = {};
+	let sidebarTyping = {};
+	let typingTimers = {};
+
+	// ── New Chat / New Group state ─────────────────────────
 	let showNewChat = false;
+	let newChatMode = 'dm'; // 'dm' | 'group'
 	let userSearchQuery = '';
 	let userResults = [];
 	let allUsers = [];
 	let searchingUsers = false;
-	let mobileView = 'sidebar';
-	let onlineUserIds = new SvelteSet();
-
-	// Map userId -> ISO timestamp terakhir offline, persisten di localStorage
-	let lastSeenMap = {};
-
-	let sidebarTyping = {};
-	let typingTimers = {};
+	let selectedGroupMembers = []; // array of user objects untuk grup baru
+	let groupNameInput = '';
+	let startingChat = false;
 
 	$: filtered = conversations
 		.slice()
@@ -66,7 +62,7 @@
 		})
 		.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-	$: activeLastSeen = activeConversation
+	$: activeLastSeen = activeConversation && !activeConversation.isGroup
 		? (lastSeenMap[Number(activeConversation.otherUserId)] ?? null)
 		: null;
 
@@ -75,8 +71,7 @@
 		const d = new Date(dateStr);
 		const now = new Date();
 		const diffDays = Math.floor((now - d) / 86400000);
-		if (diffDays === 0)
-			return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+		if (diffDays === 0) return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 		if (diffDays === 1) return 'Kemarin';
 		if (diffDays < 7) return d.toLocaleDateString('id-ID', { weekday: 'short' });
 		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
@@ -101,9 +96,7 @@
 		const convId = Number(room);
 		sidebarTyping = { ...sidebarTyping, [convId]: true };
 		clearTimeout(typingTimers[convId]);
-		typingTimers[convId] = setTimeout(() => {
-			sidebarTyping = { ...sidebarTyping, [convId]: false };
-		}, 3000);
+		typingTimers[convId] = setTimeout(() => { sidebarTyping = { ...sidebarTyping, [convId]: false }; }, 3000);
 	}
 
 	function handleGlobalStopTyping({ userId, room }) {
@@ -122,28 +115,18 @@
 			return { ...cache, [convId]: [...existing, msg] };
 		});
 
-		setConversations(
-			conversations.map((c) => {
-				if (Number(c.id) !== convId) return c;
-				return {
-					...c,
-					lastMessage: msg.content,
-					lastMessageAt: msg.createdAt,
-					time: formatPreviewTime(msg.createdAt),
-					unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
-				};
-			})
-		);
+		setConversations(conversations.map((c) => {
+			if (Number(c.id) !== convId) return c;
+			return { ...c, lastMessage: msg.content, lastMessageAt: msg.createdAt, time: formatPreviewTime(msg.createdAt), unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0) };
+		}));
 
 		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
 			const conv = conversations.find((c) => Number(c.id) === convId);
 			notify({
-				senderName: msg.sender?.username ?? 'Pesan baru',
+				senderName: conv?.isGroup ? `${msg.sender?.username} @ ${conv.name}` : (msg.sender?.username ?? 'Pesan baru'),
 				message: msg.content,
 				avatar: conv?.otherAvatar ?? null,
-				onClickCb: () => {
-					if (conv) selectConversation(conv);
-				}
+				onClickCb: () => { if (conv) selectConversation(conv); }
 			});
 		}
 	}
@@ -160,7 +143,6 @@
 	}
 
 	onMount(async () => {
-		// Muat lastSeen dari localStorage saat pertama kali buka
 		lastSeenMap = loadLastSeenFromStorage();
 
 		try {
@@ -174,16 +156,11 @@
 					await subscribePush(token);
 				}
 			}
-		} catch (e) {
-			console.log('Notification not supported:', e.message);
-		}
+		} catch (e) { console.log('Notification not supported:', e.message); }
 
 		const token = localStorage.getItem('token');
 		const user = JSON.parse(localStorage.getItem('user') ?? 'null');
-		if (!token || !user) {
-			goto('/');
-			return;
-		}
+		if (!token || !user) { goto('/'); return; }
 		currentUser = user;
 		if (user.avatar) currentUser = { ...user };
 
@@ -197,7 +174,6 @@
 		await onSocketEvent('user_offline', ({ userId }) => {
 			const id = Number(userId);
 			const now = new Date().toISOString();
-			// Update state + simpan ke localStorage agar persisten
 			lastSeenMap = { ...lastSeenMap, [id]: now };
 			saveLastSeenToStorage(lastSeenMap);
 			onlineUserIds.delete(id);
@@ -228,9 +204,7 @@
 		await loadConversations();
 
 		const onSwMessage = (event) => {
-			if (event.data?.type === 'OPEN_CONVERSATION') {
-				openConversationById(event.data.conversationId);
-			}
+			if (event.data?.type === 'OPEN_CONVERSATION') openConversationById(event.data.conversationId);
 		};
 		navigator.serviceWorker?.addEventListener('message', onSwMessage);
 
@@ -242,24 +216,17 @@
 
 		let _wasHidden = false;
 		const onVisibilityChange = async () => {
-			if (document.visibilityState === 'hidden') {
-				_wasHidden = true;
-				return;
-			}
+			if (document.visibilityState === 'hidden') { _wasHidden = true; return; }
 			if (!_wasHidden) return;
 			_wasHidden = false;
 			await refreshAfterBackground();
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-
-		const onSocketReconnect = async () => {
-			await refreshAfterBackground();
-		};
-		window.addEventListener('socket-reconnected', onSocketReconnect);
+		window.addEventListener('socket-reconnected', refreshAfterBackground);
 
 		_cleanupHandlers = () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-			window.removeEventListener('socket-reconnected', onSocketReconnect);
+			window.removeEventListener('socket-reconnected', refreshAfterBackground);
 			navigator.serviceWorker?.removeEventListener('message', onSwMessage);
 		};
 	});
@@ -273,9 +240,7 @@
 				const msgs = await messageApi.getByConversation(activeConversation.id);
 				messagesCache.update((c) => ({ ...c, [activeConversation.id]: msgs }));
 				if (chatWindow) chatWindow.setMessages(msgs, false);
-			} catch (e) {
-				console.error('refresh messages error:', e);
-			}
+			} catch (e) { console.error('refresh messages error:', e); }
 		}
 	}
 
@@ -295,31 +260,17 @@
 	async function loadConversations(force = false) {
 		let isLoaded = false;
 		conversationsLoaded.subscribe((v) => (isLoaded = v))();
-		if (isLoaded && !force) {
-			loadingConversations = false;
-			return;
-		}
+		if (isLoaded && !force) { loadingConversations = false; return; }
 		try {
 			loadingConversations = true;
 			const data = await conversationApi.getAll();
-			conversations = data.map((c) => ({
-				...c,
-				time: formatPreviewTime(c.lastMessageAt),
-				unread: c.unread ?? 0
-			}));
+			conversations = data.map((c) => ({ ...c, time: formatPreviewTime(c.lastMessageAt), unread: c.unread ?? 0 }));
 			conversationsLoaded.set(true);
 			conversationsStore.set(conversations);
-			for (const conv of conversations) {
-				await joinRoom(conv.id);
-			}
+			for (const conv of conversations) await joinRoom(conv.id);
 		} catch (e) {
-			if (e.message?.includes('401')) {
-				authStore.logout();
-				goto('/');
-			}
-		} finally {
-			loadingConversations = false;
-		}
+			if (e.message?.includes('401')) { authStore.logout(); goto('/'); }
+		} finally { loadingConversations = false; }
 	}
 
 	async function selectConversation(conv) {
@@ -332,38 +283,17 @@
 	function updateCacheIsRead(conversationId) {
 		messagesCache.update((cache) => {
 			if (!cache[conversationId]) return cache;
-			return {
-				...cache,
-				[conversationId]: cache[conversationId].map((m) =>
-					Number(m.sender?.id) !== Number(currentUser?.id) ? { ...m, isRead: true } : m
-				)
-			};
+			return { ...cache, [conversationId]: cache[conversationId].map((m) => Number(m.sender?.id) !== Number(currentUser?.id) ? { ...m, isRead: true } : m) };
 		});
 	}
 
-	function backToSidebar() {
-		mobileView = 'sidebar';
-		activeConversation = null;
-	}
-
-	function setConversations(val) {
-		conversations = val;
-		conversationsStore.set(val);
-	}
+	function backToSidebar() { mobileView = 'sidebar'; activeConversation = null; }
+	function setConversations(val) { conversations = val; conversationsStore.set(val); }
 
 	function handleSend(e) {
 		const { content } = e.detail;
 		if (!content || !activeConversation) return;
-		conversations = conversations.map((c) =>
-			c.id === activeConversation.id
-				? {
-						...c,
-						lastMessage: content,
-						lastMessageAt: new Date().toISOString(),
-						time: formatPreviewTime(new Date().toISOString())
-					}
-				: c
-		);
+		conversations = conversations.map((c) => c.id === activeConversation.id ? { ...c, lastMessage: content, lastMessageAt: new Date().toISOString(), time: formatPreviewTime(new Date().toISOString()) } : c);
 	}
 
 	function handleNewMessage(e) {
@@ -372,29 +302,13 @@
 		const isActiveConv = Number(activeConversation?.id) === Number(msg.conversationId);
 		conversations = conversations.map((c) => {
 			if (Number(c.id) !== Number(msg.conversationId)) return c;
-			return {
-				...c,
-				lastMessage: msg.content,
-				lastMessageAt: msg.createdAt,
-				time: formatPreviewTime(msg.createdAt),
-				unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0)
-			};
+			return { ...c, lastMessage: msg.content, lastMessageAt: msg.createdAt, time: formatPreviewTime(msg.createdAt), unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0) };
 		});
 	}
 
 	async function handleNewUser(user) {
 		if (Number(user.id) === Number(currentUser?.id)) return;
 		allUsers = [...allUsers.filter((u) => u.id !== user.id), user];
-		if (showNewChat && userSearchQuery.trim()) {
-			searchingUsers = true;
-			try {
-				userResults = await conversationApi.searchUsers(userSearchQuery);
-			} catch (e) {
-				console.error(e);
-			} finally {
-				searchingUsers = false;
-			}
-		}
 	}
 
 	async function handleRequestMessages(e) {
@@ -403,28 +317,18 @@
 			await tick();
 			let cache = {};
 			messagesCache.subscribe((v) => (cache = v))();
-			if (cache[conversationId]) {
-				if (chatWindow) chatWindow.setMessages(cache[conversationId], true);
-				return;
-			}
+			if (cache[conversationId]) { if (chatWindow) chatWindow.setMessages(cache[conversationId], true); return; }
 			const msgs = await messageApi.getByConversation(conversationId);
 			messagesCache.update((c) => ({ ...c, [conversationId]: msgs }));
 			if (chatWindow) chatWindow.setMessages(msgs);
-		} catch (err) {
-			console.error('fetch messages error:', err);
-		}
+		} catch (err) { console.error('fetch messages error:', err); }
 	}
 
 	function handleMessagesRead(e) {
 		const { conversationId } = e.detail;
 		messagesCache.update((cache) => {
 			if (!cache[conversationId]) return cache;
-			return {
-				...cache,
-				[conversationId]: cache[conversationId].map((m) =>
-					Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m
-				)
-			};
+			return { ...cache, [conversationId]: cache[conversationId].map((m) => Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m) };
 		});
 	}
 
@@ -432,162 +336,157 @@
 	async function handleUserSearch() {
 		clearTimeout(searchTimeout);
 		const q = userSearchQuery.trim().toLowerCase();
-		if (!q) {
-			userResults = [];
-			return;
-		}
-		const fromCache = allUsers.filter(
-			(u) => Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q)
-		);
+		if (!q) { userResults = []; return; }
+		const fromCache = allUsers.filter((u) => Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q));
 		if (fromCache.length > 0) userResults = fromCache;
 		searchTimeout = setTimeout(async () => {
 			searchingUsers = true;
 			try {
 				const results = await conversationApi.searchUsers(userSearchQuery);
-				for (const u of results) {
-					if (!allUsers.find((x) => x.id === u.id)) allUsers = [...allUsers, u];
-				}
+				for (const u of results) if (!allUsers.find((x) => x.id === u.id)) allUsers = [...allUsers, u];
 				const apiIds = new Set(results.map((u) => u.id));
-				const cacheOnly = allUsers.filter(
-					(u) =>
-						!apiIds.has(u.id) &&
-						Number(u.id) !== Number(currentUser?.id) &&
-						u.username.toLowerCase().includes(q)
-				);
+				const cacheOnly = allUsers.filter((u) => !apiIds.has(u.id) && Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q));
 				userResults = [...results, ...cacheOnly];
-			} finally {
-				searchingUsers = false;
-			}
+			} finally { searchingUsers = false; }
 		}, 300);
 	}
 
-	let startingChat = false;
+	function toggleGroupMember(u) {
+		if (selectedGroupMembers.find((m) => m.id === u.id)) {
+			selectedGroupMembers = selectedGroupMembers.filter((m) => m.id !== u.id);
+		} else {
+			selectedGroupMembers = [...selectedGroupMembers, u];
+		}
+	}
 
-	async function startChat(targetUser) {
+	async function startDM(targetUser) {
 		if (startingChat) return;
 		startingChat = true;
 		try {
 			const conv = await conversationApi.create(targetUser.id);
 			await loadConversations();
-			showNewChat = false;
-			userSearchQuery = '';
-			userResults = [];
-			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? {
-				...conv,
-				time: '',
-				unread: 0
-			};
+			closeNewChat();
+			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? { ...conv, time: '', unread: 0 };
 			await selectConversation(found);
-		} catch (e) {
-			console.error(e);
-		} finally {
-			startingChat = false;
-		}
+		} catch (e) { console.error(e); } finally { startingChat = false; }
+	}
+
+	async function startGroup() {
+		if (startingChat) return;
+		if (!groupNameInput.trim()) return;
+		if (selectedGroupMembers.length < 1) return;
+		startingChat = true;
+		try {
+			const memberIds = selectedGroupMembers.map((m) => m.id);
+			const conv = await conversationApi.createGroup(groupNameInput.trim(), memberIds);
+			await loadConversations();
+			closeNewChat();
+			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? { ...conv, time: '', unread: 0 };
+			await selectConversation(found);
+		} catch (e) { console.error(e); } finally { startingChat = false; }
+	}
+
+	function closeNewChat() {
+		showNewChat = false;
+		newChatMode = 'dm';
+		userSearchQuery = '';
+		userResults = [];
+		selectedGroupMembers = [];
+		groupNameInput = '';
 	}
 </script>
 
 <svelte:head><title>Chat</title></svelte:head>
 
-<div
-	class="chat-page-root flex w-full overflow-hidden bg-white"
-	style="position:fixed;top:0;left:0;right:0;bottom:0;"
->
+<div class="chat-page-root flex w-full overflow-hidden bg-white" style="position:fixed;top:0;left:0;right:0;bottom:0;">
+
 	<!-- SIDEBAR -->
-	<aside
-		class="
-    flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
-    {mobileView === 'chat' ? 'hidden md:flex' : 'flex'}
-  "
-	>
-		<!-- Header -->
+	<aside class="flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0 {mobileView === 'chat' ? 'hidden md:flex' : 'flex'}">
+
+		<!-- Header sidebar -->
 		<div class="flex items-center justify-between px-4 pt-5 pb-3">
 			<h1 class="text-lg font-bold tracking-tight text-[#0d0f1e]">Pesan</h1>
 			<div class="flex items-center gap-1">
 				{#if currentUser}
-					<button
-						on:click={() => goto('/profile')}
-						class="transition-opacity hover:opacity-80"
-						title="Profil saya"
-					>
+					<button on:click={() => goto('/profile')} class="transition-opacity hover:opacity-80" title="Profil">
 						<Avatar name={currentUser.username} src={currentUser.avatar ?? null} size="sm" />
 					</button>
 				{/if}
-				<button
-					on:click={() => (showNewChat = !showNewChat)}
-					class="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-					title="Chat baru"
-				>
+				<!-- Tombol + -->
+				<button on:click={() => (showNewChat = !showNewChat)} class="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100" title="Chat / Grup baru">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 4v16m8-8H4"
-						/>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
 					</svg>
 				</button>
-				<button
-					on:click={() => goto('/profile')}
-					class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100"
-					title="Profil & Pengaturan"
-				>
+				<button on:click={() => goto('/profile')} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100" title="Pengaturan">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-						/>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-						/>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
 					</svg>
 				</button>
 			</div>
 		</div>
 
-		<!-- Panel new chat -->
+		<!-- Panel new chat / new group -->
 		{#if showNewChat}
 			<div class="mx-3 mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-				<p class="mb-2 text-xs font-semibold text-gray-500">Chat baru</p>
+				<!-- Tab DM / Grup -->
+				<div class="mb-3 flex rounded-lg bg-gray-200 p-0.5">
+					<button
+						on:click={() => { newChatMode = 'dm'; selectedGroupMembers = []; groupNameInput = ''; }}
+						class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'dm' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}"
+					>Chat</button>
+					<button
+						on:click={() => { newChatMode = 'group'; }}
+						class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'group' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}"
+					>Grup</button>
+				</div>
+
+				<!-- Input nama grup (hanya di mode grup) -->
+				{#if newChatMode === 'group'}
+					<input
+						type="text"
+						placeholder="Nama grup..."
+						bind:value={groupNameInput}
+						class="mb-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none"
+					/>
+					{#if selectedGroupMembers.length > 0}
+						<div class="mb-2 flex flex-wrap gap-1">
+							{#each selectedGroupMembers as m}
+								<span class="flex items-center gap-1 rounded-full bg-[#0d0f1e] px-2 py-0.5 text-xs text-white">
+									{m.username}
+									<button on:click={() => toggleGroupMember(m)} class="ml-0.5 opacity-70 hover:opacity-100">×</button>
+								</span>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+
+				<!-- Search user -->
 				<input
 					type="text"
-					placeholder="Cari username..."
+					placeholder={newChatMode === 'group' ? 'Tambah anggota...' : 'Cari username...'}
 					bind:value={userSearchQuery}
 					on:input={handleUserSearch}
-					class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm
-                 placeholder:text-gray-400 focus:border-[#0d0f1e] focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
+					class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none"
 				/>
+
 				{#if searchingUsers}
 					<p class="mt-2 text-center text-xs text-gray-400">Mencari...</p>
 				{:else if userResults.length > 0}
 					<div class="mt-2 flex flex-col gap-0.5">
 						{#each userResults as u (u.id)}
+							{@const selected = selectedGroupMembers.find((m) => m.id === u.id)}
 							<button
-								on:click={() => startChat(u)}
+								on:click={() => newChatMode === 'group' ? toggleGroupMember(u) : startDM(u)}
 								disabled={startingChat}
-								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50"
+								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50 {selected ? 'bg-indigo-50' : ''}"
 							>
 								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
 								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
-								{#if startingChat}
-									<svg
-										class="h-4 w-4 shrink-0 animate-spin text-gray-400"
-										fill="none"
-										viewBox="0 0 24 24"
-									>
-										<circle
-											class="opacity-25"
-											cx="12"
-											cy="12"
-											r="10"
-											stroke="currentColor"
-											stroke-width="4"
-										/>
-										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+								{#if selected}
+									<svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
 									</svg>
 								{/if}
 							</button>
@@ -596,32 +495,28 @@
 				{:else if userSearchQuery}
 					<p class="mt-2 text-center text-xs text-gray-400">Tidak ditemukan</p>
 				{/if}
+
+				<!-- Tombol buat grup -->
+				{#if newChatMode === 'group' && selectedGroupMembers.length > 0 && groupNameInput.trim()}
+					<button
+						on:click={startGroup}
+						disabled={startingChat}
+						class="mt-3 w-full rounded-xl bg-[#0d0f1e] py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+					>
+						{startingChat ? 'Membuat...' : `Buat Grup (${selectedGroupMembers.length + 1} anggota)`}
+					</button>
+				{/if}
 			</div>
 		{/if}
 
-		<!-- Search -->
+		<!-- Search percakapan -->
 		<div class="px-4 pb-3">
 			<div class="relative">
-				<svg
-					class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400"
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-					/>
+				<svg class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
 				</svg>
-				<input
-					type="text"
-					placeholder="Cari percakapan..."
-					bind:value={searchQuery}
-					class="w-full rounded-xl bg-gray-100 py-2.5 pr-4 pl-9 text-sm text-[#0d0f1e]
-                 transition-all placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
-				/>
+				<input type="text" placeholder="Cari percakapan..." bind:value={searchQuery}
+					class="w-full rounded-xl bg-gray-100 py-2.5 pr-4 pl-9 text-sm text-[#0d0f1e] placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none" />
 			</div>
 		</div>
 
@@ -639,31 +534,9 @@
 				{/each}
 			{:else if filtered.length === 0}
 				<div class="flex flex-col items-center justify-center gap-2 py-16">
-					<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100">
-						<svg
-							class="h-5 w-5 text-gray-400"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="1.5"
-								d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-							/>
-						</svg>
-					</div>
-					<p class="text-center text-xs text-gray-400">
-						{searchQuery ? 'Tidak ada hasil' : 'Belum ada percakapan'}
-					</p>
+					<p class="text-center text-xs text-gray-400">{searchQuery ? 'Tidak ada hasil' : 'Belum ada percakapan'}</p>
 					{#if !searchQuery}
-						<button
-							on:click={() => (showNewChat = true)}
-							class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70"
-						>
-							Mulai chat baru
-						</button>
+						<button on:click={() => (showNewChat = true)} class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70">Mulai chat baru</button>
 					{/if}
 				</div>
 			{:else}
@@ -675,8 +548,10 @@
 						unread={conv.unread ?? 0}
 						active={activeConversation?.id === conv.id}
 						isTyping={sidebarTyping[Number(conv.id)] ?? false}
-						avatar={conv.otherAvatar ?? null}
-						online={onlineUserIds.has(Number(conv.otherUserId))}
+						avatar={conv.isGroup ? null : (conv.otherAvatar ?? null)}
+						online={!conv.isGroup && onlineUserIds.has(Number(conv.otherUserId))}
+						isGroup={conv.isGroup ?? false}
+						groupMembers={conv.members ?? []}
 						on:click={() => selectConversation(conv)}
 					/>
 				{/each}
@@ -685,41 +560,25 @@
 	</aside>
 
 	<!-- AREA CHAT -->
-	<main
-		class="
-    flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
-    {mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}
-  "
-	>
+	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto {mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}">
 		{#if activeConversation}
-			<!-- Header mobile — hanya tampil di HP -->
-			<div
-				class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
-				style="padding-top: max(12px, env(safe-area-inset-top))"
-			>
-				<button
-					on:click={backToSidebar}
-					aria-label="Kembali ke daftar percakapan"
-					class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-				>
+			<!-- Header mobile -->
+			<div class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden" style="padding-top: max(12px, env(safe-area-inset-top))">
+				<button on:click={backToSidebar} aria-label="Kembali" class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M15 19l-7-7 7-7"
-						/>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 					</svg>
 				</button>
-				<Avatar
-					name={activeConversation.name}
-					src={activeConversation.otherAvatar ?? null}
-					size="sm"
-					online={onlineUserIds.has(Number(activeConversation?.otherUserId))}
-				/>
+				{#if activeConversation.isGroup}
+					<GroupAvatar members={activeConversation.members ?? []} size="sm" />
+				{:else}
+					<Avatar name={activeConversation.name} src={activeConversation.otherAvatar ?? null} size="sm" online={onlineUserIds.has(Number(activeConversation?.otherUserId))} />
+				{/if}
 				<div>
 					<p class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
-					{#if onlineUserIds.has(Number(activeConversation?.otherUserId))}
+					{#if activeConversation.isGroup}
+						<p class="text-xs text-gray-400">{(activeConversation.members ?? []).length} anggota</p>
+					{:else if onlineUserIds.has(Number(activeConversation?.otherUserId))}
 						<p class="text-xs font-medium text-emerald-500">Online</p>
 					{:else if activeLastSeen}
 						<p class="text-xs text-gray-400">{formatLastSeen(activeLastSeen)}</p>
@@ -731,7 +590,7 @@
 				bind:this={chatWindow}
 				conversation={activeConversation}
 				currentUserId={currentUser?.id}
-				isOnline={onlineUserIds.has(Number(activeConversation?.otherUserId))}
+				isOnline={!activeConversation.isGroup && onlineUserIds.has(Number(activeConversation?.otherUserId))}
 				lastSeen={activeLastSeen}
 				on:send={handleSend}
 				on:newmessage={handleNewMessage}
@@ -739,24 +598,14 @@
 				on:messagesread={handleMessagesRead}
 			/>
 		{:else}
-			<div
-				class="hidden flex-1 flex-col items-center justify-center gap-3 px-8 text-center md:flex"
-			>
+			<div class="hidden flex-1 flex-col items-center justify-center gap-3 px-8 text-center md:flex">
 				<div class="mb-2 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
 					<svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="1.5"
-							d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-						/>
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
 					</svg>
 				</div>
 				<p class="text-sm font-semibold text-gray-500">Pilih percakapan</p>
-				<p class="max-w-xs text-xs text-gray-400">
-					Pilih percakapan di kiri atau tekan <span class="font-semibold text-[#0d0f1e]">+</span> untuk
-					mulai chat baru.
-				</p>
+				<p class="max-w-xs text-xs text-gray-400">Pilih percakapan di kiri atau tekan <span class="font-semibold text-[#0d0f1e]">+</span> untuk mulai chat baru.</p>
 			</div>
 		{/if}
 	</main>

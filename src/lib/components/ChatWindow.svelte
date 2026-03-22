@@ -10,6 +10,7 @@
 	import MessageBubble from '$lib/components/ui/MessageBubble.svelte';
 	import MessageInput from '$lib/components/ui/MessageInput.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
+	import GroupAvatar from '$lib/components/ui/GroupAvatar.svelte';
 
 	export let conversation = null;
 	export let currentUserId = null;
@@ -35,9 +36,7 @@
 		scrollToBottom();
 	}
 
-	$: if (conversation?.id) {
-		handleConversationChange();
-	}
+	$: if (conversation?.id) handleConversationChange();
 
 	async function handleConversationChange() {
 		messages = [];
@@ -50,8 +49,6 @@
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
-
-		// Ganti optimistic message jika content cocok
 		const optIdx = messages.findIndex(
 			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') && m.content === msg.content
 		);
@@ -60,7 +57,6 @@
 		} else {
 			messages = [...messages, msg];
 		}
-
 		dispatch('newmessage', msg);
 		if (Number(msg.sender?.id) !== Number(currentUserId)) {
 			emitMarkRead(conversation.id, currentUserId);
@@ -107,8 +103,6 @@
 		const { content } = e.detail;
 		if (!content?.trim() || !conversation?.id || sending) return;
 		sending = true;
-
-		// Optimistic UI — tampil langsung sebelum server konfirmasi
 		const optimisticId = `opt-${Date.now()}`;
 		const optimisticMsg = {
 			id: optimisticId,
@@ -121,28 +115,14 @@
 		messages = [...messages, optimisticMsg];
 		dispatch('send', { content });
 		scrollToBottom();
-
 		try {
-			// Kirim hanya via socket — server yang simpan ke DB dan broadcast ke semua client.
-			// Jangan pakai messageApi.send sekaligus karena akan trigger 2x receive_message
-			// (satu dari socket broadcast, satu lagi dari REST response) → pesan double.
-			await sendSocketMessage({
-				content,
-				senderId: currentUserId,
-				conversationId: conversation.id
-			});
+			await sendSocketMessage({ content, senderId: currentUserId, conversationId: conversation.id });
 		} catch (err) {
 			console.error('send error:', err);
-			// Kalau socket gagal, coba fallback ke REST dan tandai optimistic sebagai gagal
-			try {
-				await messageApi.send(conversation.id, content);
-			} catch {
-				// Kedua cara gagal — hapus optimistic message
+			try { await messageApi.send(conversation.id, content); } catch {
 				messages = messages.filter((m) => m.id !== optimisticId);
 			}
-		} finally {
-			sending = false;
-		}
+		} finally { sending = false; }
 	}
 
 	async function scrollToBottom() {
@@ -192,15 +172,16 @@
 <!-- Chat Header (Desktop only) -->
 <div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 	{#if conversation}
-		<Avatar
-			name={conversation.name}
-			src={conversation.otherAvatar ?? null}
-			size="sm"
-			online={isOnline}
-		/>
+		{#if conversation.isGroup}
+			<GroupAvatar members={conversation.members ?? []} size="sm" />
+		{:else}
+			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="sm" online={isOnline} />
+		{/if}
 		<div class="flex-1 min-w-0">
 			<p class="truncate text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
-			{#if isOnline}
+			{#if conversation.isGroup}
+				<p class="text-xs text-gray-400">{(conversation.members ?? []).length} anggota</p>
+			{:else if isOnline}
 				<p class="text-xs font-medium text-emerald-500">Online</p>
 			{:else if lastSeen}
 				<p class="text-xs text-gray-400">{formatLastSeen(lastSeen)}</p>
@@ -214,20 +195,14 @@
 	{#if loadingMessages}
 		{#each { length: 6 } as _, i (i)}
 			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
-				<div
-					class="animate-pulse rounded-2xl bg-gray-200
-					{i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'}
-					{i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"
-				></div>
+				<div class="animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'} {i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"></div>
 			</div>
 		{/each}
 	{:else if messages.length === 0 && !isTyping}
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
 				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-						d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-					/>
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
 				</svg>
 			</div>
 			<p class="text-sm text-gray-400">Belum ada pesan</p>
@@ -242,12 +217,15 @@
 					<div class="h-px flex-1 bg-gray-100"></div>
 				</div>
 			{:else}
+				<!-- Di grup, tampilkan nama pengirim di atas bubble pesan orang lain -->
+				{#if conversation.isGroup && Number(item.msg.sender?.id) !== Number(currentUserId)}
+					<p class="px-1 text-[10px] font-semibold text-gray-500">{item.msg.sender?.username}</p>
+				{/if}
 				<MessageBubble message={item.msg} {currentUserId} animate={true} />
 			{/if}
 		{/each}
 	{/if}
 
-	<!-- Typing indicator: di luar blok if/else agar selalu rendered dan tidak tenggelam -->
 	{#if isTyping}
 		<div class="flex shrink-0 items-end gap-2 pt-1">
 			<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
@@ -261,11 +239,5 @@
 
 <!-- Input Area -->
 <div class="shrink-0 px-4 pb-4 pt-2">
-	<MessageInput
-		bind:value={inputValue}
-		disabled={sending}
-		conversationId={conversation?.id}
-		{currentUserId}
-		on:send={handleSend}
-	/>
+	<MessageInput bind:value={inputValue} disabled={sending} conversationId={conversation?.id} {currentUserId} on:send={handleSend} />
 </div>

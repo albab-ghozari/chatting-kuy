@@ -13,6 +13,7 @@
 	export let online = false;
 	export let isGroup = false;
 	export let groupMembers = [];
+	export let groupAvatar = null; // foto grup jika ada
 
 	const dispatch = createEventDispatcher();
 </script>
@@ -24,7 +25,8 @@
 >
 	<!-- Avatar -->
 	{#if isGroup}
-		<GroupAvatar members={groupMembers} size="md" />
+		<!-- Pass groupAvatar ke GroupAvatar agar foto tampil di sidebar -->
+		<GroupAvatar members={groupMembers} {groupAvatar} size="md" />
 	{:else}
 		<Avatar name={name} src={avatar} size="md" {online} />
 	{/if}
@@ -32,11 +34,9 @@
 	<!-- Info -->
 	<div class="flex min-w-0 flex-1 flex-col">
 		<div class="flex items-center justify-between gap-1">
-			<span class="truncate text-sm font-semibold {active ? 'text-white' : 'text-[#0d0f1e]'}">
-				{name}
-			</span>
+			<span class="truncate text-sm font-semibold {active ? 'text-white' : 'text-[#0d0f1e]'}">{name}</span>
 			{#if time}
-				<span class="shrink-0 text-[10px] {active ? 'text-gray-400' : 'text-gray-400'}">{time}</span>
+				<span class="shrink-0 text-[10px] text-gray-400">{time}</span>
 			{/if}
 		</div>
 		<div class="flex items-center justify-between gap-1">

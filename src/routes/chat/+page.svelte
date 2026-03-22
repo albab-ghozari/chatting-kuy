@@ -37,13 +37,13 @@
 	let chatWindow;
 	let loadingConversations = false;
 	let searchQuery = '';
-	let mobileView = 'sidebar'; // 'sidebar' | 'chat' | 'groupinfo'
+	// mobileView: 'sidebar' | 'chat' | 'groupinfo'
+	let mobileView = 'sidebar';
 	let onlineUserIds = new SvelteSet();
 	let lastSeenMap = {};
 	let sidebarTyping = {};
 	let typingTimers = {};
 
-	// ── New Chat / New Group state ─────────────────────────
 	let showNewChat = false;
 	let newChatMode = 'dm';
 	let userSearchQuery = '';
@@ -69,8 +69,7 @@
 
 	function formatPreviewTime(dateStr) {
 		if (!dateStr) return '';
-		const d = new Date(dateStr);
-		const now = new Date();
+		const d = new Date(dateStr), now = new Date();
 		const diffDays = Math.floor((now - d) / 86400000);
 		if (diffDays === 0) return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 		if (diffDays === 1) return 'Kemarin';
@@ -80,8 +79,7 @@
 
 	function formatLastSeen(isoStr) {
 		if (!isoStr) return '';
-		const d = new Date(isoStr);
-		const now = new Date();
+		const d = new Date(isoStr), now = new Date();
 		const diffMin = Math.floor((now - d) / 60000);
 		const diffHour = Math.floor((now - d) / 3600000);
 		const diffDay = Math.floor((now - d) / 86400000);
@@ -136,16 +134,12 @@
 		if (!convId) return;
 		const id = Number(convId);
 		let conv = conversations.find((c) => Number(c.id) === id);
-		if (!conv) {
-			await new Promise((r) => setTimeout(r, 800));
-			conv = conversations.find((c) => Number(c.id) === id);
-		}
+		if (!conv) { await new Promise((r) => setTimeout(r, 800)); conv = conversations.find((c) => Number(c.id) === id); }
 		if (conv) selectConversation(conv);
 	}
 
 	onMount(async () => {
 		lastSeenMap = loadLastSeenFromStorage();
-
 		try {
 			if (typeof Notification !== 'undefined') {
 				const token = localStorage.getItem('token');
@@ -169,9 +163,7 @@
 		await onSocketEvent('typing', handleGlobalTyping);
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
 		await onSocketEvent('new_user', handleNewUser);
-		await onSocketEvent('user_online', ({ userId }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
-		});
+		await onSocketEvent('user_online', ({ userId }) => { onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]); });
 		await onSocketEvent('user_offline', ({ userId }) => {
 			const id = Number(userId);
 			lastSeenMap = { ...lastSeenMap, [id]: new Date().toISOString() };
@@ -179,9 +171,7 @@
 			onlineUserIds.delete(id);
 			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
-		await onSocketEvent('online_users', ({ userIds }) => {
-			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
-		});
+		await onSocketEvent('online_users', ({ userIds }) => { onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]); });
 
 		let storedConvs = [];
 		conversationsStore.subscribe((val) => (storedConvs = val))();
@@ -209,10 +199,7 @@
 		navigator.serviceWorker?.addEventListener('message', onSwMessage);
 
 		const convParam = new URL(window.location.href).searchParams.get('conv');
-		if (convParam) {
-			await openConversationById(convParam);
-			window.history.replaceState({}, '', '/chat');
-		}
+		if (convParam) { await openConversationById(convParam); window.history.replaceState({}, '', '/chat'); }
 
 		let _wasHidden = false;
 		const onVisibilityChange = async () => {
@@ -223,7 +210,6 @@
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
 		window.addEventListener('socket-reconnected', refreshAfterBackground);
-
 		_cleanupHandlers = () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener('socket-reconnected', refreshAfterBackground);
@@ -290,12 +276,30 @@
 	function backToSidebar() { mobileView = 'sidebar'; activeConversation = null; }
 	function setConversations(val) { conversations = val; conversationsStore.set(val); }
 
+	// Update activeConversation + conversations list saat grup diupdate
+	function handleGroupUpdated(e) {
+		const updated = e.detail;
+		activeConversation = { ...activeConversation, ...updated };
+		conversations = conversations.map((c) =>
+			Number(c.id) === Number(updated.id)
+				? { ...c, name: updated.name ?? c.name, groupAvatar: updated.groupAvatar !== undefined ? updated.groupAvatar : c.groupAvatar, members: updated.members ?? c.members }
+				: c
+		);
+		conversationsStore.set(conversations);
+	}
+
+	function handleLeft() {
+		conversations = conversations.filter((c) => Number(c.id) !== Number(activeConversation?.id));
+		conversationsStore.set(conversations);
+		activeConversation = null;
+		mobileView = 'sidebar';
+	}
+
 	function handleSend(e) {
 		const { content } = e.detail;
 		if (!content || !activeConversation) return;
 		conversations = conversations.map((c) => c.id === activeConversation.id
-			? { ...c, lastMessage: content, lastMessageAt: new Date().toISOString(), time: formatPreviewTime(new Date().toISOString()) }
-			: c);
+			? { ...c, lastMessage: content, lastMessageAt: new Date().toISOString(), time: formatPreviewTime(new Date().toISOString()) } : c);
 	}
 
 	function handleNewMessage(e) {
@@ -334,28 +338,6 @@
 		});
 	}
 
-	// Handler saat grup diupdate (nama/foto) dari ChatWindow atau GroupInfoPanel
-	function handleGroupUpdated(e) {
-		const updated = e.detail;
-		// Update activeConversation agar header & panel langsung sinkron
-		activeConversation = { ...activeConversation, ...updated };
-		// Update juga di conversations list (sidebar)
-		conversations = conversations.map((c) =>
-			Number(c.id) === Number(updated.id)
-				? { ...c, name: updated.name ?? c.name, groupAvatar: updated.groupAvatar ?? c.groupAvatar, members: updated.members ?? c.members }
-				: c
-		);
-		conversationsStore.set(conversations);
-	}
-
-	// Handler saat user keluar / dikeluarkan dari grup
-	function handleLeft() {
-		conversations = conversations.filter((c) => Number(c.id) !== Number(activeConversation?.id));
-		conversationsStore.set(conversations);
-		activeConversation = null;
-		mobileView = 'sidebar';
-	}
-
 	let searchTimeout;
 	async function handleUserSearch() {
 		clearTimeout(searchTimeout);
@@ -376,11 +358,8 @@
 	}
 
 	function toggleGroupMember(u) {
-		if (selectedGroupMembers.find((m) => m.id === u.id)) {
-			selectedGroupMembers = selectedGroupMembers.filter((m) => m.id !== u.id);
-		} else {
-			selectedGroupMembers = [...selectedGroupMembers, u];
-		}
+		if (selectedGroupMembers.find((m) => m.id === u.id)) selectedGroupMembers = selectedGroupMembers.filter((m) => m.id !== u.id);
+		else selectedGroupMembers = [...selectedGroupMembers, u];
 	}
 
 	async function startDM(targetUser) {
@@ -388,8 +367,7 @@
 		startingChat = true;
 		try {
 			const conv = await conversationApi.create(targetUser.id);
-			await loadConversations();
-			closeNewChat();
+			await loadConversations(); closeNewChat();
 			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? { ...conv, time: '', unread: 0 };
 			await selectConversation(found);
 		} catch (e) { console.error(e); } finally { startingChat = false; }
@@ -400,8 +378,7 @@
 		startingChat = true;
 		try {
 			const conv = await conversationApi.createGroup(groupNameInput.trim(), selectedGroupMembers.map((m) => m.id));
-			await loadConversations();
-			closeNewChat();
+			await loadConversations(); closeNewChat();
 			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? { ...conv, time: '', unread: 0 };
 			await selectConversation(found);
 		} catch (e) { console.error(e); } finally { startingChat = false; }
@@ -418,7 +395,7 @@
 
 	<!-- SIDEBAR -->
 	<aside class="flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
-		{mobileView !== 'sidebar' ? 'hidden md:flex' : 'flex'}">
+		{mobileView === 'sidebar' ? 'flex' : 'hidden md:flex'}">
 		<div class="flex items-center justify-between px-4 pt-5 pb-3">
 			<h1 class="text-lg font-bold tracking-tight text-[#0d0f1e]">Pesan</h1>
 			<div class="flex items-center gap-1">
@@ -450,10 +427,7 @@
 					{#if selectedGroupMembers.length > 0}
 						<div class="mb-2 flex flex-wrap gap-1">
 							{#each selectedGroupMembers as m}
-								<span class="flex items-center gap-1 rounded-full bg-[#0d0f1e] px-2 py-0.5 text-xs text-white">
-									{m.username}
-									<button on:click={() => toggleGroupMember(m)} class="ml-0.5 opacity-70 hover:opacity-100">×</button>
-								</span>
+								<span class="flex items-center gap-1 rounded-full bg-[#0d0f1e] px-2 py-0.5 text-xs text-white">{m.username}<button on:click={() => toggleGroupMember(m)} class="ml-0.5 opacity-70 hover:opacity-100">×</button></span>
 							{/each}
 						</div>
 					{/if}
@@ -465,7 +439,7 @@
 					<div class="mt-2 flex flex-col gap-0.5">
 						{#each userResults as u (u.id)}
 							{@const selected = selectedGroupMembers.find((m) => m.id === u.id)}
-							<button on:click={() => newChatMode === 'group' ? toggleGroupMember(u) : startDM(u)} disabled={startingChat} class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50 {selected ? 'bg-indigo-50' : ''}">
+							<button on:click={() => newChatMode === 'group' ? toggleGroupMember(u) : startDM(u)} disabled={startingChat} class="flex items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-white disabled:opacity-50 {selected ? 'bg-indigo-50' : ''}">
 								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
 								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
 								{#if selected}<svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" /></svg>{/if}
@@ -476,7 +450,7 @@
 					<p class="mt-2 text-center text-xs text-gray-400">Tidak ditemukan</p>
 				{/if}
 				{#if newChatMode === 'group' && selectedGroupMembers.length > 0 && groupNameInput.trim()}
-					<button on:click={startGroup} disabled={startingChat} class="mt-3 w-full rounded-xl bg-[#0d0f1e] py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50">
+					<button on:click={startGroup} disabled={startingChat} class="mt-3 w-full rounded-xl bg-[#0d0f1e] py-2 text-sm font-semibold text-white hover:opacity-80 disabled:opacity-50">
 						{startingChat ? 'Membuat...' : `Buat Grup (${selectedGroupMembers.length + 1} anggota)`}
 					</button>
 				{/if}
@@ -501,7 +475,7 @@
 			{:else if filtered.length === 0}
 				<div class="flex flex-col items-center justify-center gap-2 py-16">
 					<p class="text-center text-xs text-gray-400">{searchQuery ? 'Tidak ada hasil' : 'Belum ada percakapan'}</p>
-					{#if !searchQuery}<button on:click={() => (showNewChat = true)} class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70">Mulai chat baru</button>{/if}
+					{#if !searchQuery}<button on:click={() => (showNewChat = true)} class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2">Mulai chat baru</button>{/if}
 				</div>
 			{:else}
 				{#each filtered as conv (conv.id)}
@@ -516,6 +490,7 @@
 						online={!conv.isGroup && onlineUserIds.has(Number(conv.otherUserId))}
 						isGroup={conv.isGroup ?? false}
 						groupMembers={conv.members ?? []}
+						groupAvatar={conv.groupAvatar ?? null}
 						on:click={() => selectConversation(conv)}
 					/>
 				{/each}
@@ -523,18 +498,18 @@
 		</div>
 	</aside>
 
-	<!-- AREA CHAT -->
+	<!-- AREA CHAT (mobile: tampil saat mobileView === 'chat') -->
 	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
-		{mobileView === 'sidebar' ? 'hidden md:flex' : mobileView === 'groupinfo' ? 'hidden' : 'flex'}">
+		{mobileView === 'chat' ? 'flex' : 'hidden md:flex'}">
 		{#if activeConversation}
 			<!-- Header mobile -->
 			<div class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden" style="padding-top: max(12px, env(safe-area-inset-top))">
 				<button on:click={backToSidebar} class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
 				</button>
-				<!-- Avatar grup bisa diklik untuk buka info grup -->
+				<!-- Avatar grup bisa diklik untuk buka info grup di mobile -->
 				{#if activeConversation.isGroup}
-					<button on:click={() => (mobileView = 'groupinfo')} class="shrink-0">
+					<button on:click={() => (mobileView = 'groupinfo')} class="shrink-0 transition-opacity hover:opacity-80">
 						{#if activeConversation.groupAvatar}
 							<img src={activeConversation.groupAvatar} alt="grup" class="h-8 w-8 rounded-full object-cover" />
 						{:else}
@@ -546,7 +521,8 @@
 				{/if}
 				<div class="flex-1 min-w-0">
 					{#if activeConversation.isGroup}
-						<button on:click={() => (mobileView = 'groupinfo')} class="text-left">
+						<!-- Nama grup juga bisa diklik -->
+						<button on:click={() => (mobileView = 'groupinfo')} class="w-full text-left">
 							<p class="truncate text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
 							<p class="text-xs text-gray-400">{(activeConversation.members ?? []).length} anggota · ketuk untuk info</p>
 						</button>
@@ -585,14 +561,14 @@
 		{/if}
 	</main>
 
-	<!-- Panel info grup mobile (full screen, hanya di HP) -->
+	<!-- Panel info grup mobile (full screen, hanya HP) -->
 	{#if mobileView === 'groupinfo' && activeConversation?.isGroup}
-		<div class="flex w-full flex-col md:hidden">
+		<div class="flex w-full flex-col overflow-hidden md:hidden" style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;">
 			<GroupInfoPanel
 				conversation={activeConversation}
 				{currentUserId}
 				on:close={() => (mobileView = 'chat')}
-				on:updated={handleGroupUpdated}
+				on:updated={(e) => { handleGroupUpdated(e); }}
 				on:memberRemoved={(e) => {
 					activeConversation = { ...activeConversation, members: (activeConversation.members ?? []).filter((m) => m.id !== e.detail.userId) };
 					handleGroupUpdated({ detail: activeConversation });

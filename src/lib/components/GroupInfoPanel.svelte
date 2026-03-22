@@ -3,20 +3,20 @@
 	import { conversationApi } from '$lib/api.js';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 
-	export let conversation = null;  // objek grup
+	export let conversation = null;
 	export let currentUserId = null;
 
 	const dispatch = createEventDispatcher();
 
 	let editingName = false;
-	let nameInput = conversation?.name ?? '';
+	let nameInput = '';
 	let saving = false;
 	let error = '';
 
 	$: isAdmin = (conversation?.members ?? []).find((m) => m.id === currentUserId)?.role === 'admin';
 	$: nameInput = conversation?.name ?? '';
 
-	// ── Ganti foto grup ─────────────────────────────
+	// ── Ganti foto grup ────────────────────────────
 	function pickAvatar() {
 		if (!isAdmin) return;
 		const input = document.createElement('input');
@@ -28,15 +28,20 @@
 			if (file.size > 2_000_000) { error = 'Foto terlalu besar (max 2MB)'; return; }
 			const reader = new FileReader();
 			reader.onload = async (ev) => {
-				const base64 = ev.target.result;
-				await saveGroup({ groupAvatar: base64 });
+				await saveGroup({ groupAvatar: ev.target.result });
 			};
 			reader.readAsDataURL(file);
 		};
 		input.click();
 	}
 
-	// ── Simpan perubahan (nama / avatar) ──────────────────
+	// ── Hapus foto grup ────────────────────────────
+	async function removeAvatar() {
+		if (!isAdmin) return;
+		await saveGroup({ groupAvatar: null });
+	}
+
+	// ── Simpan ke API ─────────────────────────────────
 	async function saveGroup(data) {
 		if (saving) return;
 		saving = true;
@@ -58,7 +63,7 @@
 		saveGroup({ groupName: trimmed });
 	}
 
-	// ── Keluarkan anggota ─────────────────────────────
+	// ── Keluarkan anggota ────────────────────────────
 	let removingId = null;
 	async function removeMember(memberId) {
 		if (removingId) return;
@@ -73,7 +78,7 @@
 		}
 	}
 
-	// ── Keluar dari grup (member keluar sendiri) ───────
+	// ── Keluar dari grup ─────────────────────────────
 	async function leaveGroup() {
 		if (removingId) return;
 		removingId = currentUserId;
@@ -87,17 +92,19 @@
 	}
 </script>
 
-<!-- Panel info grup — slide in dari kanan -->
 <div class="flex h-full flex-col bg-white">
 
 	<!-- Header panel -->
-	<div class="flex shrink-0 items-center gap-3 border-b border-gray-100 px-5 py-4">
+	<div class="flex shrink-0 items-center gap-3 border-b border-gray-100 px-5 py-4" style="padding-top: max(16px, env(safe-area-inset-top))">
 		<button on:click={() => dispatch('close')} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100">
 			<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 			</svg>
 		</button>
 		<p class="text-sm font-semibold text-[#0d0f1e]">Info Grup</p>
+		{#if saving}
+			<span class="ml-auto text-xs text-gray-400">Menyimpan...</span>
+		{/if}
 	</div>
 
 	<div class="flex-1 overflow-y-auto">
@@ -115,10 +122,12 @@
 					</div>
 				{/if}
 				{#if isAdmin}
+					<!-- Tombol ganti foto -->
 					<button
 						on:click={pickAvatar}
-						class="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#0d0f1e] text-white shadow hover:opacity-80"
-						title="Ganti foto grup"
+						disabled={saving}
+						class="absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full bg-[#0d0f1e] text-white shadow hover:opacity-80 disabled:opacity-50"
+						title="Ganti foto"
 					>
 						<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -128,22 +137,33 @@
 				{/if}
 			</div>
 
+			<!-- Tombol hapus foto (tampil hanya jika ada foto dan admin) -->
+			{#if isAdmin && conversation?.groupAvatar}
+				<button
+					on:click={removeAvatar}
+					disabled={saving}
+					class="flex items-center gap-1 rounded-lg px-3 py-1 text-xs text-red-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+				>
+					<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+					</svg>
+					Hapus foto
+				</button>
+			{/if}
+
 			<!-- Nama grup -->
 			{#if editingName}
 				<div class="flex w-full items-center gap-2">
 					<input
 						bind:value={nameInput}
-						on:keydown={(e) => e.key === 'Enter' && saveName()}
-						on:keydown={(e) => e.key === 'Escape' && (editingName = false)}
+						on:keydown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') editingName = false; }}
 						class="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:border-[#0d0f1e] focus:outline-none"
 						autofocus
 					/>
 					<button on:click={saveName} disabled={saving} class="rounded-xl bg-[#0d0f1e] px-3 py-2 text-xs text-white disabled:opacity-50">
 						{saving ? '...' : 'Simpan'}
 					</button>
-					<button on:click={() => (editingName = false)} class="rounded-xl px-2 py-2 text-xs text-gray-400 hover:bg-gray-100">
-						Batal
-					</button>
+					<button on:click={() => (editingName = false)} class="rounded-xl px-2 py-2 text-xs text-gray-400 hover:bg-gray-100">Batal</button>
 				</div>
 			{:else}
 				<div class="flex items-center gap-2">
@@ -166,23 +186,19 @@
 
 		<!-- Daftar anggota -->
 		<div class="px-4 pb-6">
-			<p class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
-				Anggota
-			</p>
+			<p class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Anggota</p>
 			<div class="flex flex-col gap-0.5">
 				{#each (conversation?.members ?? []) as member (member.id)}
 					<div class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-gray-50">
 						<Avatar name={member.username} src={member.avatar ?? null} size="sm" />
 						<div class="flex-1 min-w-0">
 							<p class="truncate text-sm font-medium text-[#0d0f1e]">
-								{member.username}
-								{#if member.id === currentUserId}<span class="text-gray-400"> (kamu)</span>{/if}
+								{member.username}{#if member.id === currentUserId}<span class="text-gray-400"> (kamu)</span>{/if}
 							</p>
 							{#if member.role === 'admin'}
 								<p class="text-[10px] font-semibold text-indigo-500">Admin</p>
 							{/if}
 						</div>
-						<!-- Admin bisa keluarkan member lain, bukan dirinya sendiri -->
 						{#if isAdmin && member.id !== currentUserId}
 							<button
 								on:click={() => removeMember(member.id)}
@@ -198,7 +214,7 @@
 		</div>
 	</div>
 
-	<!-- Tombol keluar grup (untuk semua member) -->
+	<!-- Tombol keluar grup -->
 	<div class="shrink-0 border-t border-gray-100 px-5 py-4">
 		<button
 			on:click={leaveGroup}

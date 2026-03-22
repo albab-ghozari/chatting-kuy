@@ -195,7 +195,9 @@
 	{#if loadingMessages}
 		{#each { length: 6 } as _, i (i)}
 			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
-				<div class="animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'} {i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"></div>
+				<div class="animate-pulse rounded-2xl bg-gray-200
+					{i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'}
+					{i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"></div>
 			</div>
 		{/each}
 	{:else if messages.length === 0 && !isTyping}
@@ -217,11 +219,13 @@
 					<div class="h-px flex-1 bg-gray-100"></div>
 				</div>
 			{:else}
-				<!-- Di grup, tampilkan nama pengirim di atas bubble pesan orang lain -->
-				{#if conversation.isGroup && Number(item.msg.sender?.id) !== Number(currentUserId)}
-					<p class="px-1 text-[10px] font-semibold text-gray-500">{item.msg.sender?.username}</p>
-				{/if}
-				<MessageBubble message={item.msg} {currentUserId} animate={true} />
+				<!-- Nama pengirim sekarang ditangani oleh MessageBubble via prop isGroup -->
+				<MessageBubble
+					message={item.msg}
+					{currentUserId}
+					animate={true}
+					isGroup={conversation.isGroup ?? false}
+				/>
 			{/if}
 		{/each}
 	{/if}

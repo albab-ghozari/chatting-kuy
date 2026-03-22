@@ -1,17 +1,17 @@
 <script>
 	export let message;
-	export let currentUserId;
+	export let currentUserId = null; // default null agar tidak crash saat prop belum diterima
 	export let animate = false;
-	export let isGroup = false; // tampilkan nama pengirim hanya di grup
+	export let isGroup = false;
 
-	$: isOwn = message.sender.id === currentUserId;
+	$: isOwn = currentUserId != null && message.sender?.id === currentUserId;
 	$: isOptimistic = typeof message.id === 'string' && message.id.startsWith('opt-');
 	$: isRead = message.isRead ?? false;
 
-	const animateClass = (() => {
+	// Pakai $: agar re-evaluate saat currentUserId berubah
+	$: animateClass = (() => {
 		if (!animate) return '';
-		const own = message.sender.id === currentUserId;
-		return own ? 'msg-enter-right' : 'msg-enter-left';
+		return isOwn ? 'msg-enter-right' : 'msg-enter-left';
 	})();
 
 	function formatTime(dateStr) {
@@ -24,7 +24,7 @@
 		<!-- Tampilkan nama pengirim hanya di percakapan grup, dan hanya untuk pesan orang lain -->
 		{#if isGroup && !isOwn}
 			<span class="px-1 text-[10px] font-semibold text-gray-500">
-				{message.sender.username}
+				{message.sender?.username ?? ''}
 			</span>
 		{/if}
 

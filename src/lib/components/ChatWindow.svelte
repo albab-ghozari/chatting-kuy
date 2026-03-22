@@ -22,7 +22,6 @@
 	let isTyping = false;
 	let typingTimer;
 	let sending = false;
-	// showGroupInfo hanya untuk desktop — mobile dihandle oleh +page.svelte via mobileView
 	let showGroupInfo = false;
 
 	let localConversation = null;
@@ -51,8 +50,10 @@
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(localConversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
+		const isImage = typeof msg.content === 'string' && msg.content.startsWith('[image]');
 		const optIdx = messages.findIndex(
-			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') && m.content === msg.content
+			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') &&
+			(isImage ? m.content === msg.content : m.content === msg.content)
 		);
 		if (optIdx !== -1) {
 			messages = messages.map((m, i) => (i === optIdx ? msg : m));
@@ -111,12 +112,19 @@
 
 	async function handleSend(e) {
 		const { content } = e.detail;
-		if (!content?.trim() || !localConversation?.id || sending) return;
+		if (!content || !localConversation?.id || sending) return;
+		// Validasi teks: harus ada isi setelah trim. Foto boleh tanpa trim
+		const isImage = content.startsWith('[image]');
+		if (!isImage && !content.trim()) return;
+
 		sending = true;
 		const optimisticId = `opt-${Date.now()}`;
 		const optimisticMsg = {
-			id: optimisticId, content, conversationId: localConversation.id,
-			createdAt: new Date().toISOString(), isRead: false,
+			id: optimisticId,
+			content,
+			conversationId: localConversation.id,
+			createdAt: new Date().toISOString(),
+			isRead: false,
 			sender: { id: currentUserId, username: 'me' }
 		};
 		messages = [...messages, optimisticMsg];
@@ -188,17 +196,10 @@
 	}
 </script>
 
-<!--
-	ChatWindow adalah komponen CHAT saja.
-	Panel info grup di desktop dirender di sini (md:block).
-	Panel info grup di mobile dirender langsung di +page.svelte via mobileView.
-	Tidak ada wrapper dengan overflow-hidden agar tidak menghalangi touch event di mobile.
--->
 <div class="flex flex-1 overflow-hidden">
-	<!-- Kolom chat -->
 	<div class="flex flex-1 flex-col overflow-hidden">
 
-		<!-- Header desktop only -->
+		<!-- Header desktop -->
 		<div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 			{#if localConversation}
 				{#if localConversation.isGroup}
@@ -272,12 +273,17 @@
 
 		<!-- Input -->
 		<div class="shrink-0 px-4 pb-4 pt-2">
-			<MessageInput bind:value={inputValue} disabled={sending} conversationId={localConversation?.id} {currentUserId} on:send={handleSend} />
+			<MessageInput
+				bind:value={inputValue}
+				disabled={sending}
+				conversationId={localConversation?.id}
+				{currentUserId}
+				on:send={handleSend}
+			/>
 		</div>
 	</div>
 
-	<!-- Panel info grup — DESKTOP ONLY (md:block) -->
-	<!-- Mobile dihandle sepenuhnya oleh +page.svelte via mobileView === 'groupinfo' -->
+	<!-- Panel info grup desktop -->
 	{#if showGroupInfo && localConversation?.isGroup}
 		<div class="hidden w-72 shrink-0 border-l border-gray-100 md:block">
 			<GroupInfoPanel

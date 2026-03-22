@@ -276,7 +276,6 @@
 	function backToSidebar() { mobileView = 'sidebar'; activeConversation = null; }
 	function setConversations(val) { conversations = val; conversationsStore.set(val); }
 
-	// Update activeConversation + conversations list saat grup diupdate
 	function handleGroupUpdated(e) {
 		const updated = e.detail;
 		activeConversation = { ...activeConversation, ...updated };
@@ -393,7 +392,7 @@
 
 <div class="chat-page-root flex w-full overflow-hidden bg-white" style="position:fixed;top:0;left:0;right:0;bottom:0;">
 
-	<!-- SIDEBAR -->
+	<!-- SIDEBAR — hanya tampil di mobile kalau mobileView === 'sidebar' -->
 	<aside class="flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
 		{mobileView === 'sidebar' ? 'flex' : 'hidden md:flex'}">
 		<div class="flex items-center justify-between px-4 pt-5 pb-3">
@@ -498,7 +497,7 @@
 		</div>
 	</aside>
 
-	<!-- AREA CHAT (mobile: tampil saat mobileView === 'chat') -->
+	<!-- AREA CHAT — tampil saat mobileView === 'chat' -->
 	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
 		{mobileView === 'chat' ? 'flex' : 'hidden md:flex'}">
 		{#if activeConversation}
@@ -507,7 +506,6 @@
 				<button on:click={backToSidebar} class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
 				</button>
-				<!-- Avatar grup bisa diklik untuk buka info grup di mobile -->
 				{#if activeConversation.isGroup}
 					<button on:click={() => (mobileView = 'groupinfo')} class="shrink-0 transition-opacity hover:opacity-80">
 						{#if activeConversation.groupAvatar}
@@ -521,7 +519,6 @@
 				{/if}
 				<div class="flex-1 min-w-0">
 					{#if activeConversation.isGroup}
-						<!-- Nama grup juga bisa diklik -->
 						<button on:click={() => (mobileView = 'groupinfo')} class="w-full text-left">
 							<p class="truncate text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
 							<p class="text-xs text-gray-400">{(activeConversation.members ?? []).length} anggota · ketuk untuk info</p>
@@ -561,20 +558,24 @@
 		{/if}
 	</main>
 
-	<!-- Panel info grup mobile (full screen, hanya HP) -->
+	<!--
+		Panel info grup mobile — tampil sebagai layar penuh menggantikan area chat.
+		Menggunakan kondisi mobileView === 'groupinfo' saja (tanpa absolute overlay)
+		agar tombol di dalamnya bisa diklik tanpa terhalang elemen lain.
+	-->
 	{#if mobileView === 'groupinfo' && activeConversation?.isGroup}
-		<div class="flex w-full flex-col overflow-hidden md:hidden" style="position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;">
+		<div class="flex w-full flex-col overflow-hidden md:hidden">
 			<GroupInfoPanel
 				conversation={activeConversation}
 				{currentUserId}
 				on:close={() => (mobileView = 'chat')}
-				on:updated={(e) => { handleGroupUpdated(e); }}
+				on:updated={handleGroupUpdated}
 				on:memberRemoved={(e) => {
 					activeConversation = { ...activeConversation, members: (activeConversation.members ?? []).filter((m) => m.id !== e.detail.userId) };
 					handleGroupUpdated({ detail: activeConversation });
 					mobileView = 'chat';
 				}}
-				on:left={() => { handleLeft(); }}
+				on:left={handleLeft}
 			/>
 		</div>
 	{/if}

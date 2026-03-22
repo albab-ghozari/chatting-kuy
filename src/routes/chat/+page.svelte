@@ -1,6 +1,7 @@
 <script>
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { notify, requestNotificationPermission, subscribePush } from '$lib/notification.js';
 
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
@@ -112,6 +113,20 @@
 		}
 	}
 
+	// Buka percakapan berdasarkan conversationId — dipakai oleh notif klik
+	async function openConversationById(convId) {
+		if (!convId) return;
+		const id = Number(convId);
+		// Cari di daftar yang sudah ada
+		let conv = conversations.find((c) => Number(c.id) === id);
+		// Kalau belum ada (mungkin belum selesai load) — tunggu sebentar lalu coba lagi
+		if (!conv) {
+			await new Promise((r) => setTimeout(r, 800));
+			conv = conversations.find((c) => Number(c.id) === id);
+		}
+		if (conv) selectConversation(conv);
+	}
+
 	onMount(async () => {
 		try {
 			if (typeof Notification !== 'undefined') {
@@ -176,6 +191,24 @@
 		await connectSocket(currentUser.id);
 		await loadConversations();
 
+		// ── Listener postMessage dari Service Worker ──────────────────
+		// Dipanggil saat user klik notifikasi dan app sudah terbuka
+		const onSwMessage = (event) => {
+			if (event.data?.type === 'OPEN_CONVERSATION') {
+				openConversationById(event.data.conversationId);
+			}
+		};
+		navigator.serviceWorker?.addEventListener('message', onSwMessage);
+
+		// ── Baca query param ?conv=ID ─────────────────────────────────
+		// Dipanggil saat app dibuka baru dari klik notifikasi (app sebelumnya tertutup)
+		const convParam = new URL(window.location.href).searchParams.get('conv');
+		if (convParam) {
+			await openConversationById(convParam);
+			// Bersihkan query param dari URL tanpa reload
+			window.history.replaceState({}, '', '/chat');
+		}
+
 		// Saat app kembali ke foreground — refresh data yang missed
 		let _wasHidden = false;
 		const onVisibilityChange = async () => {
@@ -199,6 +232,7 @@
 		_cleanupHandlers = () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener('socket-reconnected', onSocketReconnect);
+			navigator.serviceWorker?.removeEventListener('message', onSwMessage);
 		};
 	});
 

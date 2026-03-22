@@ -63,13 +63,10 @@
 		})
 		.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-	// last seen: pakai lastSeenMap kalau ada, fallback ke lastMessageAt percakapan DM
 	$: activeLastSeen = (() => {
 		if (!activeConversation || activeConversation.isGroup) return null;
 		const fromEvent = lastSeenMap[Number(activeConversation.otherUserId)] ?? null;
 		if (fromEvent) return fromEvent;
-		// Fallback: kalau user offline dan tidak pernah terima event offline,
-		// pakai lastMessageAt dari conversation sebagai estimasi terakhir aktif
 		return activeConversation.lastMessageAt ?? null;
 	})();
 
@@ -125,10 +122,8 @@
 			return { ...c, lastMessage: msg.content, lastMessageAt: msg.createdAt, time: formatPreviewTime(msg.createdAt), unread: !isActiveConv && !isFromMe ? (c.unread ?? 0) + 1 : (c.unread ?? 0) };
 		}));
 
-		// Update last seen dari pesan masuk — lebih akurat daripada mengandalkan event offline
 		if (!isFromMe && msg.sender?.id) {
 			const senderId = Number(msg.sender.id);
-			// Hanya update kalau pesan lebih baru dari yang tersimpan
 			const existing = lastSeenMap[senderId];
 			if (!existing || new Date(msg.createdAt) > new Date(existing)) {
 				lastSeenMap = { ...lastSeenMap, [senderId]: msg.createdAt };
@@ -184,7 +179,6 @@
 		await onSocketEvent('user_offline', ({ userId }) => {
 			const id = Number(userId);
 			const now = new Date().toISOString();
-			// Hanya update jika lebih baru
 			if (!lastSeenMap[id] || new Date(now) > new Date(lastSeenMap[id])) {
 				lastSeenMap = { ...lastSeenMap, [id]: now };
 				saveLastSeenToStorage(lastSeenMap);
@@ -275,7 +269,6 @@
 			conversationsLoaded.set(true);
 			conversationsStore.set(conversations);
 			for (const conv of conversations) await joinRoom(conv.id);
-			// Seed lastSeenMap dari pesan terakhir DM (fallback kalau event offline tidak pernah diterima)
 			for (const conv of data) {
 				if (!conv.isGroup && conv.otherUserId && conv.lastMessageAt) {
 					const id = Number(conv.otherUserId);
@@ -528,17 +521,6 @@
 		</div>
 	</aside>
 
-	<!--
-		Mobile: hanya satu panel yang tampil sekaligus.
-		- mobileView === 'chat'      → <main> dengan ChatWindow
-		- mobileView === 'groupinfo' → GroupInfoPanel fullscreen
-		- mobileView === 'sidebar'   → sidebar (di atas)
-
-		KEY FIX: ChatWindow hanya dirender saat mobileView === 'chat' di mobile.
-		Ini mencegah ChatWindow (dengan flex-1 overflow-hidden) tetap ada di DOM
-		dan menghalangi touch event saat panel grup ditampilkan.
-	-->
-
 	<!-- Area chat: selalu ada di desktop, di mobile hanya saat mobileView === 'chat' -->
 	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
 		{mobileView === 'chat' ? 'flex' : 'hidden md:flex'}">
@@ -576,11 +558,6 @@
 				</div>
 			</div>
 
-			<!--
-				ChatWindow dirender di sini — di mobile ini hanya terlihat saat mobileView === 'chat'
-				karena <main> sendiri hidden saat mobileView !== 'chat'.
-				Jadi ChatWindow tidak pernah ada di DOM saat GroupInfoPanel tampil di mobile.
-			-->
 			<ChatWindow
 				bind:this={chatWindow}
 				conversation={activeConversation}
@@ -605,16 +582,12 @@
 		{/if}
 	</main>
 
-	<!--
-		Panel info grup mobile — fullscreen, hanya di mobile.
-		Saat ini tampil, <main> di atas hidden, jadi tidak ada overlap / saling menghalangi.
-		Tidak pakai absolute/overlay — murni flex column di root flex container.
-	-->
+	<!-- Panel info grup mobile — fullscreen, hanya di mobile -->
 	{#if mobileView === 'groupinfo' && activeConversation?.isGroup}
 		<div class="flex w-full flex-1 flex-col overflow-hidden md:hidden">
 			<GroupInfoPanel
 				conversation={activeConversation}
-				{currentUserId}
+				currentUserId={currentUser?.id}
 				on:close={() => (mobileView = 'chat')}
 				on:updated={handleGroupUpdated}
 				on:memberRemoved={(e) => {

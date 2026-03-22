@@ -14,7 +14,7 @@
 	export let conversation = null;
 	export let currentUserId = null;
 	export let isOnline = false;
-	export let lastSeen = null; // ISO string — kapan terakhir online
+	export let lastSeen = null;
 
 	const dispatch = createEventDispatcher();
 
@@ -71,6 +71,7 @@
 		isTyping = true;
 		clearTimeout(typingTimer);
 		typingTimer = setTimeout(() => (isTyping = false), 3000);
+		scrollToBottom();
 	}
 
 	function handleStopTypingEvent({ userId, room }) {
@@ -184,7 +185,6 @@
 			{#if isOnline}
 				<p class="text-xs font-medium text-emerald-500">Online</p>
 			{:else if lastSeen}
-				<!-- Offline: tampilkan kapan terakhir online, tanpa dot/teks Offline -->
 				<p class="text-xs text-gray-400">{formatLastSeen(lastSeen)}</p>
 			{/if}
 		</div>
@@ -192,7 +192,7 @@
 </div>
 
 <!-- Messages Area -->
-<div bind:this={messagesContainer} class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4">
+<div bind:this={messagesContainer} class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4 pb-2">
 	{#if loadingMessages}
 		{#each { length: 6 } as _, i (i)}
 			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
@@ -203,7 +203,8 @@
 				></div>
 			</div>
 		{/each}
-	{:else if messages.length === 0}
+	{:else if messages.length === 0 && !isTyping}
+		<!-- Empty state: hanya tampil kalau tidak ada pesan DAN tidak ada yang mengetik -->
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
 				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,16 +228,17 @@
 				<MessageBubble message={item.msg} {currentUserId} animate={true} />
 			{/if}
 		{/each}
+	{/if}
 
-		{#if isTyping}
-			<div class="flex items-end gap-2">
-				<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
-					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:0ms"></span>
-					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:150ms"></span>
-					<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:300ms"></span>
-				</div>
+	<!-- Typing indicator: di luar blok if/else agar selalu rendered dan tidak tenggelam -->
+	{#if isTyping}
+		<div class="flex shrink-0 items-end gap-2 pt-1">
+			<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
+				<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:0ms"></span>
+				<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:150ms"></span>
+				<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:300ms"></span>
 			</div>
-		{/if}
+		</div>
 	{/if}
 </div>
 

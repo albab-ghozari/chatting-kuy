@@ -20,6 +20,22 @@
 	import ChatWindow from '$lib/components/ChatWindow.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
+	const LAST_SEEN_KEY = 'chatting_kuy_last_seen';
+
+	function loadLastSeenFromStorage() {
+		try {
+			return JSON.parse(localStorage.getItem(LAST_SEEN_KEY) ?? '{}');
+		} catch {
+			return {};
+		}
+	}
+
+	function saveLastSeenToStorage(map) {
+		try {
+			localStorage.setItem(LAST_SEEN_KEY, JSON.stringify(map));
+		} catch {}
+	}
+
 	let currentUser = null;
 	let conversations = [];
 	let _storeUnsub = null;
@@ -35,7 +51,7 @@
 	let mobileView = 'sidebar';
 	let onlineUserIds = new SvelteSet();
 
-	// Map userId -> timestamp terakhir offline
+	// Map userId -> ISO timestamp terakhir offline, persisten di localStorage
 	let lastSeenMap = {};
 
 	let sidebarTyping = {};
@@ -50,7 +66,6 @@
 		})
 		.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-	// Ambil lastSeen untuk conversation aktif
 	$: activeLastSeen = activeConversation
 		? (lastSeenMap[Number(activeConversation.otherUserId)] ?? null)
 		: null;
@@ -65,6 +80,20 @@
 		if (diffDays === 1) return 'Kemarin';
 		if (diffDays < 7) return d.toLocaleDateString('id-ID', { weekday: 'short' });
 		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+	}
+
+	function formatLastSeen(isoStr) {
+		if (!isoStr) return '';
+		const d = new Date(isoStr);
+		const now = new Date();
+		const diffMin = Math.floor((now - d) / 60000);
+		const diffHour = Math.floor((now - d) / 3600000);
+		const diffDay = Math.floor((now - d) / 86400000);
+		if (diffMin < 1) return 'terakhir online baru saja';
+		if (diffMin < 60) return `terakhir online ${diffMin} menit lalu`;
+		if (diffHour < 24) return `terakhir online ${diffHour} jam lalu`;
+		if (diffDay === 1) return 'terakhir online kemarin';
+		return `terakhir online ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
 	}
 
 	function handleGlobalTyping({ userId, room }) {
@@ -131,6 +160,9 @@
 	}
 
 	onMount(async () => {
+		// Muat lastSeen dari localStorage saat pertama kali buka
+		lastSeenMap = loadLastSeenFromStorage();
+
 		try {
 			if (typeof Notification !== 'undefined') {
 				const token = localStorage.getItem('token');
@@ -164,8 +196,10 @@
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
 			const id = Number(userId);
-			// Simpan waktu offline sebagai lastSeen
-			lastSeenMap = { ...lastSeenMap, [id]: new Date().toISOString() };
+			const now = new Date().toISOString();
+			// Update state + simpan ke localStorage agar persisten
+			lastSeenMap = { ...lastSeenMap, [id]: now };
+			saveLastSeenToStorage(lastSeenMap);
 			onlineUserIds.delete(id);
 			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
@@ -729,20 +763,3 @@
 </div>
 
 <ToastContainer />
-
-<script context="module">
-	export function formatLastSeen(isoStr) {
-		if (!isoStr) return '';
-		const d = new Date(isoStr);
-		const now = new Date();
-		const diffMs = now - d;
-		const diffMin = Math.floor(diffMs / 60000);
-		const diffHour = Math.floor(diffMs / 3600000);
-		const diffDay = Math.floor(diffMs / 86400000);
-		if (diffMin < 1) return 'terakhir online baru saja';
-		if (diffMin < 60) return `terakhir online ${diffMin} menit lalu`;
-		if (diffHour < 24) return `terakhir online ${diffHour} jam lalu`;
-		if (diffDay === 1) return 'terakhir online kemarin';
-		return `terakhir online ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
-	}
-</script>

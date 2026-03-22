@@ -44,19 +44,16 @@
 	async function handleConversationChange() {
 		messages = [];
 		isTyping = false;
-		loadingMessages = true; // tetap true sampai setMessages dipanggil
+		loadingMessages = true;
 		await tick();
 		dispatch('requestmessages', { conversationId: conversation.id });
-		// TIDAK reset loadingMessages di sini — biarkan setMessages yang melakukannya
 	}
 
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 
-		// Hindari duplikat
 		if (messages.find((m) => m.id === msg.id)) return;
 
-		// Ganti optimistic message jika ada
 		const optIdx = messages.findIndex(
 			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') && m.content === msg.content
 		);
@@ -68,7 +65,6 @@
 
 		dispatch('newmessage', msg);
 
-		// Tandai terbaca jika pesan dari lawan
 		if (Number(msg.sender?.id) !== Number(currentUserId)) {
 			emitMarkRead(conversation.id, currentUserId);
 		}
@@ -116,7 +112,6 @@
 
 		sending = true;
 
-		// Optimistic UI
 		const optimisticId = `opt-${Date.now()}`;
 		const optimisticMsg = {
 			id: optimisticId,
@@ -180,14 +175,13 @@
 <!-- Chat Header (Desktop) -->
 <div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 	{#if conversation}
-		<div class="relative">
-			<Avatar name={conversation.name} src={conversation.otherAvatar ?? null} size="sm" />
-			{#if isOnline}
-				<span
-					class="absolute right-0 bottom-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400"
-				></span>
-			{/if}
-		</div>
+		<!-- Gunakan prop online={isOnline} di Avatar — tidak perlu dot manual lagi -->
+		<Avatar
+			name={conversation.name}
+			src={conversation.otherAvatar ?? null}
+			size="sm"
+			online={isOnline}
+		/>
 		<div class="flex-1 min-w-0">
 			<p class="truncate text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
 			<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
@@ -203,7 +197,6 @@
 	class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4"
 >
 	{#if loadingMessages}
-		<!-- Skeleton: tampil selama data belum datang -->
 		{#each { length: 6 } as _, i (i)}
 			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
 				<div
@@ -214,7 +207,6 @@
 			</div>
 		{/each}
 	{:else if messages.length === 0}
-		<!-- Empty state: hanya tampil kalau sudah selesai loading dan memang kosong -->
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
 				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

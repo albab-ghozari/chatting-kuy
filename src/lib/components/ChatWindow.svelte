@@ -25,9 +25,6 @@
 	let typingTimer;
 	let sending = false;
 
-	// Dipanggil dari parent (+page.svelte) lewat bind:this
-	// loadingMessages di-set false di sini — bukan di handleConversationChange
-	// supaya skeleton tetap tampil sampai data benar-benar tiba
 	export function setMessages(msgs, shouldMarkRead = true) {
 		messages = msgs ?? [];
 		loadingMessages = false;
@@ -175,7 +172,7 @@
 <!-- Chat Header (Desktop) -->
 <div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 	{#if conversation}
-		<!-- Gunakan prop online={isOnline} di Avatar — tidak perlu dot manual lagi -->
+		<!-- Avatar dengan dot online built-in, tanpa simbol ● di teks status -->
 		<Avatar
 			name={conversation.name}
 			src={conversation.otherAvatar ?? null}
@@ -185,7 +182,7 @@
 		<div class="flex-1 min-w-0">
 			<p class="truncate text-sm font-semibold text-[#0d0f1e]">{conversation.name}</p>
 			<p class="text-xs {isOnline ? 'font-medium text-emerald-500' : 'text-gray-400'}">
-				{isOnline ? '● Online' : '○ Offline'}
+				{isOnline ? 'Online' : 'Offline'}
 			</p>
 		</div>
 	{/if}

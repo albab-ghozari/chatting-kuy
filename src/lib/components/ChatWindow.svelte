@@ -50,6 +50,8 @@
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(conversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
+
+		// Ganti optimistic message jika content cocok
 		const optIdx = messages.findIndex(
 			(m) => typeof m.id === 'string' && m.id.startsWith('opt-') && m.content === msg.content
 		);
@@ -58,6 +60,7 @@
 		} else {
 			messages = [...messages, msg];
 		}
+
 		dispatch('newmessage', msg);
 		if (Number(msg.sender?.id) !== Number(currentUserId)) {
 			emitMarkRead(conversation.id, currentUserId);
@@ -104,6 +107,8 @@
 		const { content } = e.detail;
 		if (!content?.trim() || !conversation?.id || sending) return;
 		sending = true;
+
+		// Optimistic UI — tampil langsung sebelum server konfirmasi
 		const optimisticId = `opt-${Date.now()}`;
 		const optimisticMsg = {
 			id: optimisticId,
@@ -116,12 +121,25 @@
 		messages = [...messages, optimisticMsg];
 		dispatch('send', { content });
 		scrollToBottom();
+
 		try {
-			await sendSocketMessage({ content, senderId: currentUserId, conversationId: conversation.id });
-			await messageApi.send(conversation.id, content);
+			// Kirim hanya via socket — server yang simpan ke DB dan broadcast ke semua client.
+			// Jangan pakai messageApi.send sekaligus karena akan trigger 2x receive_message
+			// (satu dari socket broadcast, satu lagi dari REST response) → pesan double.
+			await sendSocketMessage({
+				content,
+				senderId: currentUserId,
+				conversationId: conversation.id
+			});
 		} catch (err) {
 			console.error('send error:', err);
-			messages = messages.filter((m) => m.id !== optimisticId);
+			// Kalau socket gagal, coba fallback ke REST dan tandai optimistic sebagai gagal
+			try {
+				await messageApi.send(conversation.id, content);
+			} catch {
+				// Kedua cara gagal — hapus optimistic message
+				messages = messages.filter((m) => m.id !== optimisticId);
+			}
 		} finally {
 			sending = false;
 		}
@@ -204,7 +222,6 @@
 			</div>
 		{/each}
 	{:else if messages.length === 0 && !isTyping}
-		<!-- Empty state: hanya tampil kalau tidak ada pesan DAN tidak ada yang mengetik -->
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
 				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

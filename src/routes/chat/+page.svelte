@@ -35,6 +35,9 @@
 	let mobileView = 'sidebar';
 	let onlineUserIds = new SvelteSet();
 
+	// Map userId -> timestamp terakhir offline
+	let lastSeenMap = {};
+
 	let sidebarTyping = {};
 	let typingTimers = {};
 
@@ -46,6 +49,11 @@
 			return tb - ta;
 		})
 		.filter((c) => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+	// Ambil lastSeen untuk conversation aktif
+	$: activeLastSeen = activeConversation
+		? (lastSeenMap[Number(activeConversation.otherUserId)] ?? null)
+		: null;
 
 	function formatPreviewTime(dateStr) {
 		if (!dateStr) return '';
@@ -79,10 +87,8 @@
 		const isActiveConv = Number(activeConversation?.id) === convId;
 		const isFromMe = Number(msg.sender?.id) === Number(currentUser?.id);
 
-		// Update cache messages
 		messagesCache.update((cache) => {
 			const existing = cache[convId] ?? [];
-			// Hindari duplikat
 			if (existing.find((m) => m.id === msg.id)) return cache;
 			return { ...cache, [convId]: [...existing, msg] };
 		});
@@ -113,13 +119,10 @@
 		}
 	}
 
-	// Buka percakapan berdasarkan conversationId — dipakai oleh notif klik
 	async function openConversationById(convId) {
 		if (!convId) return;
 		const id = Number(convId);
-		// Cari di daftar yang sudah ada
 		let conv = conversations.find((c) => Number(c.id) === id);
-		// Kalau belum ada (mungkin belum selesai load) — tunggu sebentar lalu coba lagi
 		if (!conv) {
 			await new Promise((r) => setTimeout(r, 800));
 			conv = conversations.find((c) => Number(c.id) === id);
@@ -152,7 +155,6 @@
 		currentUser = user;
 		if (user.avatar) currentUser = { ...user };
 
-		// Pasang listener DULU sebelum connect agar tidak race condition
 		await onSocketEvent('receive_message', handleGlobalMessage);
 		await onSocketEvent('typing', handleGlobalTyping);
 		await onSocketEvent('stop_typing', handleGlobalStopTyping);
@@ -161,19 +163,20 @@
 			onlineUserIds = new SvelteSet([...onlineUserIds, Number(userId)]);
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
-			onlineUserIds.delete(Number(userId));
+			const id = Number(userId);
+			// Simpan waktu offline sebagai lastSeen
+			lastSeenMap = { ...lastSeenMap, [id]: new Date().toISOString() };
+			onlineUserIds.delete(id);
 			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
 		await onSocketEvent('online_users', ({ userIds }) => {
 			onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]);
 		});
 
-		// Ambil data dari store langsung — tidak perlu subscribe
 		let storedConvs = [];
 		conversationsStore.subscribe((val) => (storedConvs = val))();
 		if (storedConvs.length > 0) conversations = storedConvs;
 
-		// Fix iOS Safari keyboard — visualViewport
 		if (typeof window !== 'undefined' && window.visualViewport) {
 			const vv = window.visualViewport;
 			const update = () => {
@@ -187,12 +190,9 @@
 			vv.addEventListener('scroll', update);
 		}
 
-		// Baru connect dan load data
 		await connectSocket(currentUser.id);
 		await loadConversations();
 
-		// ── Listener postMessage dari Service Worker ──────────────────
-		// Dipanggil saat user klik notifikasi dan app sudah terbuka
 		const onSwMessage = (event) => {
 			if (event.data?.type === 'OPEN_CONVERSATION') {
 				openConversationById(event.data.conversationId);
@@ -200,16 +200,12 @@
 		};
 		navigator.serviceWorker?.addEventListener('message', onSwMessage);
 
-		// ── Baca query param ?conv=ID ─────────────────────────────────
-		// Dipanggil saat app dibuka baru dari klik notifikasi (app sebelumnya tertutup)
 		const convParam = new URL(window.location.href).searchParams.get('conv');
 		if (convParam) {
 			await openConversationById(convParam);
-			// Bersihkan query param dari URL tanpa reload
 			window.history.replaceState({}, '', '/chat');
 		}
 
-		// Saat app kembali ke foreground — refresh data yang missed
 		let _wasHidden = false;
 		const onVisibilityChange = async () => {
 			if (document.visibilityState === 'hidden') {
@@ -222,13 +218,11 @@
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
 
-		// Saat socket reconnect — refresh data
 		const onSocketReconnect = async () => {
 			await refreshAfterBackground();
 		};
 		window.addEventListener('socket-reconnected', onSocketReconnect);
 
-		// Simpan untuk cleanup
 		_cleanupHandlers = () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			window.removeEventListener('socket-reconnected', onSocketReconnect);
@@ -238,18 +232,12 @@
 
 	let _cleanupHandlers = null;
 
-	// Refresh conversations dan messages aktif setelah kembali ke foreground
 	async function refreshAfterBackground() {
-		// Refresh conversation list
 		await loadConversations(true);
-
-		// Kalau ada conversation aktif — refresh messages
 		if (activeConversation) {
 			try {
 				const msgs = await messageApi.getByConversation(activeConversation.id);
-				// Update cache dengan data terbaru
 				messagesCache.update((c) => ({ ...c, [activeConversation.id]: msgs }));
-				// Update ChatWindow tanpa trigger emitMarkRead
 				if (chatWindow) chatWindow.setMessages(msgs, false);
 			} catch (e) {
 				console.error('refresh messages error:', e);
@@ -271,7 +259,6 @@
 	});
 
 	async function loadConversations(force = false) {
-		// Kalau sudah pernah load dan tidak dipaksa — pakai data dari store
 		let isLoaded = false;
 		conversationsLoaded.subscribe((v) => (isLoaded = v))();
 		if (isLoaded && !force) {
@@ -305,11 +292,9 @@
 		activeConversation = conv;
 		mobileView = 'chat';
 		conversations = conversations.map((c) => (c.id === conv.id ? { ...c, unread: 0 } : c));
-		// Update cache isRead saat buka conversation — pesan masuk jadi terbaca
 		updateCacheIsRead(conv.id);
 	}
 
-	// Update cache saat pesan dibaca — supaya saat balik ke chat tidak jadi biru lagi
 	function updateCacheIsRead(conversationId) {
 		messagesCache.update((cache) => {
 			if (!cache[conversationId]) return cache;
@@ -327,7 +312,6 @@
 		activeConversation = null;
 	}
 
-	// Helper — update conversations dan sync ke store sekaligus
 	function setConversations(val) {
 		conversations = val;
 		conversationsStore.set(val);
@@ -382,18 +366,13 @@
 	async function handleRequestMessages(e) {
 		const { conversationId } = e.detail;
 		try {
-			// Tunggu DOM update dulu
 			await tick();
-
-			// Cek cache dulu
 			let cache = {};
 			messagesCache.subscribe((v) => (cache = v))();
 			if (cache[conversationId]) {
 				if (chatWindow) chatWindow.setMessages(cache[conversationId], true);
 				return;
 			}
-
-			// Tidak ada di cache — fetch dari API
 			const msgs = await messageApi.getByConversation(conversationId);
 			messagesCache.update((c) => ({ ...c, [conversationId]: msgs }));
 			if (chatWindow) chatWindow.setMessages(msgs);
@@ -402,7 +381,6 @@
 		}
 	}
 
-	// Update cache saat lawan membaca pesan (dapat event dari ChatWindow)
 	function handleMessagesRead(e) {
 		const { conversationId } = e.detail;
 		messagesCache.update((cache) => {
@@ -424,12 +402,10 @@
 			userResults = [];
 			return;
 		}
-
 		const fromCache = allUsers.filter(
 			(u) => Number(u.id) !== Number(currentUser?.id) && u.username.toLowerCase().includes(q)
 		);
 		if (fromCache.length > 0) userResults = fromCache;
-
 		searchTimeout = setTimeout(async () => {
 			searchingUsers = true;
 			try {
@@ -682,7 +658,7 @@
   "
 	>
 		{#if activeConversation}
-			<!-- Header mobile -->
+			<!-- Header mobile — hanya tampil di HP -->
 			<div
 				class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden"
 				style="padding-top: max(12px, env(safe-area-inset-top))"
@@ -705,16 +681,15 @@
 					name={activeConversation.name}
 					src={activeConversation.otherAvatar ?? null}
 					size="sm"
+					online={onlineUserIds.has(Number(activeConversation?.otherUserId))}
 				/>
 				<div>
 					<p class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
-					<p
-						class="text-xs {onlineUserIds.has(Number(activeConversation?.otherUserId))
-							? 'font-medium text-emerald-500'
-							: 'text-gray-400'}"
-					>
-						{onlineUserIds.has(Number(activeConversation?.otherUserId)) ? '● online' : '○ offline'}
-					</p>
+					{#if onlineUserIds.has(Number(activeConversation?.otherUserId))}
+						<p class="text-xs font-medium text-emerald-500">Online</p>
+					{:else if activeLastSeen}
+						<p class="text-xs text-gray-400">{formatLastSeen(activeLastSeen)}</p>
+					{/if}
 				</div>
 			</div>
 
@@ -723,6 +698,7 @@
 				conversation={activeConversation}
 				currentUserId={currentUser?.id}
 				isOnline={onlineUserIds.has(Number(activeConversation?.otherUserId))}
+				lastSeen={activeLastSeen}
 				on:send={handleSend}
 				on:newmessage={handleNewMessage}
 				on:requestmessages={handleRequestMessages}
@@ -753,3 +729,20 @@
 </div>
 
 <ToastContainer />
+
+<script context="module">
+	export function formatLastSeen(isoStr) {
+		if (!isoStr) return '';
+		const d = new Date(isoStr);
+		const now = new Date();
+		const diffMs = now - d;
+		const diffMin = Math.floor(diffMs / 60000);
+		const diffHour = Math.floor(diffMs / 3600000);
+		const diffDay = Math.floor(diffMs / 86400000);
+		if (diffMin < 1) return 'terakhir online baru saja';
+		if (diffMin < 60) return `terakhir online ${diffMin} menit lalu`;
+		if (diffHour < 24) return `terakhir online ${diffHour} jam lalu`;
+		if (diffDay === 1) return 'terakhir online kemarin';
+		return `terakhir online ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}`;
+	}
+</script>

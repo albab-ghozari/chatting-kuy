@@ -18,6 +18,7 @@
 	import ConversationItem from '$lib/components/ui/ConversationItem.svelte';
 	import Avatar from '$lib/components/ui/Avatar.svelte';
 	import GroupAvatar from '$lib/components/ui/GroupAvatar.svelte';
+	import GroupInfoPanel from '$lib/components/GroupInfoPanel.svelte';
 	import ChatWindow from '$lib/components/ChatWindow.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
@@ -36,7 +37,7 @@
 	let chatWindow;
 	let loadingConversations = false;
 	let searchQuery = '';
-	let mobileView = 'sidebar';
+	let mobileView = 'sidebar'; // 'sidebar' | 'chat' | 'groupinfo'
 	let onlineUserIds = new SvelteSet();
 	let lastSeenMap = {};
 	let sidebarTyping = {};
@@ -44,12 +45,12 @@
 
 	// ── New Chat / New Group state ─────────────────────────
 	let showNewChat = false;
-	let newChatMode = 'dm'; // 'dm' | 'group'
+	let newChatMode = 'dm';
 	let userSearchQuery = '';
 	let userResults = [];
 	let allUsers = [];
 	let searchingUsers = false;
-	let selectedGroupMembers = []; // array of user objects untuk grup baru
+	let selectedGroupMembers = [];
 	let groupNameInput = '';
 	let startingChat = false;
 
@@ -173,8 +174,7 @@
 		});
 		await onSocketEvent('user_offline', ({ userId }) => {
 			const id = Number(userId);
-			const now = new Date().toISOString();
-			lastSeenMap = { ...lastSeenMap, [id]: now };
+			lastSeenMap = { ...lastSeenMap, [id]: new Date().toISOString() };
 			saveLastSeenToStorage(lastSeenMap);
 			onlineUserIds.delete(id);
 			onlineUserIds = new SvelteSet(onlineUserIds);
@@ -293,7 +293,9 @@
 	function handleSend(e) {
 		const { content } = e.detail;
 		if (!content || !activeConversation) return;
-		conversations = conversations.map((c) => c.id === activeConversation.id ? { ...c, lastMessage: content, lastMessageAt: new Date().toISOString(), time: formatPreviewTime(new Date().toISOString()) } : c);
+		conversations = conversations.map((c) => c.id === activeConversation.id
+			? { ...c, lastMessage: content, lastMessageAt: new Date().toISOString(), time: formatPreviewTime(new Date().toISOString()) }
+			: c);
 	}
 
 	function handleNewMessage(e) {
@@ -330,6 +332,28 @@
 			if (!cache[conversationId]) return cache;
 			return { ...cache, [conversationId]: cache[conversationId].map((m) => Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m) };
 		});
+	}
+
+	// Handler saat grup diupdate (nama/foto) dari ChatWindow atau GroupInfoPanel
+	function handleGroupUpdated(e) {
+		const updated = e.detail;
+		// Update activeConversation agar header & panel langsung sinkron
+		activeConversation = { ...activeConversation, ...updated };
+		// Update juga di conversations list (sidebar)
+		conversations = conversations.map((c) =>
+			Number(c.id) === Number(updated.id)
+				? { ...c, name: updated.name ?? c.name, groupAvatar: updated.groupAvatar ?? c.groupAvatar, members: updated.members ?? c.members }
+				: c
+		);
+		conversationsStore.set(conversations);
+	}
+
+	// Handler saat user keluar / dikeluarkan dari grup
+	function handleLeft() {
+		conversations = conversations.filter((c) => Number(c.id) !== Number(activeConversation?.id));
+		conversationsStore.set(conversations);
+		activeConversation = null;
+		mobileView = 'sidebar';
 	}
 
 	let searchTimeout;
@@ -372,13 +396,10 @@
 	}
 
 	async function startGroup() {
-		if (startingChat) return;
-		if (!groupNameInput.trim()) return;
-		if (selectedGroupMembers.length < 1) return;
+		if (startingChat || !groupNameInput.trim() || selectedGroupMembers.length < 1) return;
 		startingChat = true;
 		try {
-			const memberIds = selectedGroupMembers.map((m) => m.id);
-			const conv = await conversationApi.createGroup(groupNameInput.trim(), memberIds);
+			const conv = await conversationApi.createGroup(groupNameInput.trim(), selectedGroupMembers.map((m) => m.id));
 			await loadConversations();
 			closeNewChat();
 			const found = conversations.find((c) => Number(c.id) === Number(conv.id)) ?? { ...conv, time: '', unread: 0 };
@@ -387,12 +408,7 @@
 	}
 
 	function closeNewChat() {
-		showNewChat = false;
-		newChatMode = 'dm';
-		userSearchQuery = '';
-		userResults = [];
-		selectedGroupMembers = [];
-		groupNameInput = '';
+		showNewChat = false; newChatMode = 'dm'; userSearchQuery = ''; userResults = []; selectedGroupMembers = []; groupNameInput = '';
 	}
 </script>
 
@@ -401,24 +417,20 @@
 <div class="chat-page-root flex w-full overflow-hidden bg-white" style="position:fixed;top:0;left:0;right:0;bottom:0;">
 
 	<!-- SIDEBAR -->
-	<aside class="flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0 {mobileView === 'chat' ? 'hidden md:flex' : 'flex'}">
-
-		<!-- Header sidebar -->
+	<aside class="flex w-full flex-col border-r border-gray-100 bg-white md:w-72 md:shrink-0
+		{mobileView !== 'sidebar' ? 'hidden md:flex' : 'flex'}">
 		<div class="flex items-center justify-between px-4 pt-5 pb-3">
 			<h1 class="text-lg font-bold tracking-tight text-[#0d0f1e]">Pesan</h1>
 			<div class="flex items-center gap-1">
 				{#if currentUser}
-					<button on:click={() => goto('/profile')} class="transition-opacity hover:opacity-80" title="Profil">
+					<button on:click={() => goto('/profile')} class="transition-opacity hover:opacity-80">
 						<Avatar name={currentUser.username} src={currentUser.avatar ?? null} size="sm" />
 					</button>
 				{/if}
-				<!-- Tombol + -->
-				<button on:click={() => (showNewChat = !showNewChat)} class="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100" title="Chat / Grup baru">
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-					</svg>
+				<button on:click={() => (showNewChat = !showNewChat)} class="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
 				</button>
-				<button on:click={() => goto('/profile')} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100" title="Pengaturan">
+				<button on:click={() => goto('/profile')} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-gray-100">
 					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -427,29 +439,14 @@
 			</div>
 		</div>
 
-		<!-- Panel new chat / new group -->
 		{#if showNewChat}
 			<div class="mx-3 mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-				<!-- Tab DM / Grup -->
 				<div class="mb-3 flex rounded-lg bg-gray-200 p-0.5">
-					<button
-						on:click={() => { newChatMode = 'dm'; selectedGroupMembers = []; groupNameInput = ''; }}
-						class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'dm' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}"
-					>Chat</button>
-					<button
-						on:click={() => { newChatMode = 'group'; }}
-						class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'group' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}"
-					>Grup</button>
+					<button on:click={() => { newChatMode = 'dm'; selectedGroupMembers = []; groupNameInput = ''; }} class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'dm' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}">Chat</button>
+					<button on:click={() => { newChatMode = 'group'; }} class="flex-1 rounded-md py-1 text-xs font-semibold transition-colors {newChatMode === 'group' ? 'bg-white text-[#0d0f1e] shadow-sm' : 'text-gray-500'}">Grup</button>
 				</div>
-
-				<!-- Input nama grup (hanya di mode grup) -->
 				{#if newChatMode === 'group'}
-					<input
-						type="text"
-						placeholder="Nama grup..."
-						bind:value={groupNameInput}
-						class="mb-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none"
-					/>
+					<input type="text" placeholder="Nama grup..." bind:value={groupNameInput} class="mb-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none" />
 					{#if selectedGroupMembers.length > 0}
 						<div class="mb-2 flex flex-wrap gap-1">
 							{#each selectedGroupMembers as m}
@@ -461,83 +458,50 @@
 						</div>
 					{/if}
 				{/if}
-
-				<!-- Search user -->
-				<input
-					type="text"
-					placeholder={newChatMode === 'group' ? 'Tambah anggota...' : 'Cari username...'}
-					bind:value={userSearchQuery}
-					on:input={handleUserSearch}
-					class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none"
-				/>
-
+				<input type="text" placeholder={newChatMode === 'group' ? 'Tambah anggota...' : 'Cari username...'} bind:value={userSearchQuery} on:input={handleUserSearch} class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:border-[#0d0f1e] focus:outline-none" />
 				{#if searchingUsers}
 					<p class="mt-2 text-center text-xs text-gray-400">Mencari...</p>
 				{:else if userResults.length > 0}
 					<div class="mt-2 flex flex-col gap-0.5">
 						{#each userResults as u (u.id)}
 							{@const selected = selectedGroupMembers.find((m) => m.id === u.id)}
-							<button
-								on:click={() => newChatMode === 'group' ? toggleGroupMember(u) : startDM(u)}
-								disabled={startingChat}
-								class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50 {selected ? 'bg-indigo-50' : ''}"
-							>
+							<button on:click={() => newChatMode === 'group' ? toggleGroupMember(u) : startDM(u)} disabled={startingChat} class="flex items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-white disabled:opacity-50 {selected ? 'bg-indigo-50' : ''}">
 								<Avatar name={u.username} src={u.avatar ?? null} size="sm" />
 								<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{u.username}</span>
-								{#if selected}
-									<svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
-									</svg>
-								{/if}
+								{#if selected}<svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" /></svg>{/if}
 							</button>
 						{/each}
 					</div>
 				{:else if userSearchQuery}
 					<p class="mt-2 text-center text-xs text-gray-400">Tidak ditemukan</p>
 				{/if}
-
-				<!-- Tombol buat grup -->
 				{#if newChatMode === 'group' && selectedGroupMembers.length > 0 && groupNameInput.trim()}
-					<button
-						on:click={startGroup}
-						disabled={startingChat}
-						class="mt-3 w-full rounded-xl bg-[#0d0f1e] py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50"
-					>
+					<button on:click={startGroup} disabled={startingChat} class="mt-3 w-full rounded-xl bg-[#0d0f1e] py-2 text-sm font-semibold text-white transition-opacity hover:opacity-80 disabled:opacity-50">
 						{startingChat ? 'Membuat...' : `Buat Grup (${selectedGroupMembers.length + 1} anggota)`}
 					</button>
 				{/if}
 			</div>
 		{/if}
 
-		<!-- Search percakapan -->
 		<div class="px-4 pb-3">
 			<div class="relative">
-				<svg class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-				</svg>
-				<input type="text" placeholder="Cari percakapan..." bind:value={searchQuery}
-					class="w-full rounded-xl bg-gray-100 py-2.5 pr-4 pl-9 text-sm text-[#0d0f1e] placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none" />
+				<svg class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+				<input type="text" placeholder="Cari percakapan..." bind:value={searchQuery} class="w-full rounded-xl bg-gray-100 py-2.5 pr-4 pl-9 text-sm text-[#0d0f1e] placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none" />
 			</div>
 		</div>
 
-		<!-- Conversation list -->
 		<div class="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-4">
 			{#if loadingConversations && conversations.length === 0}
 				{#each { length: 4 } as _, i (i)}
 					<div class="flex items-center gap-3 px-3 py-3">
 						<div class="h-9 w-9 shrink-0 animate-pulse rounded-full bg-gray-200"></div>
-						<div class="flex flex-1 flex-col gap-1.5">
-							<div class="h-3 w-3/4 animate-pulse rounded bg-gray-200"></div>
-							<div class="h-2.5 w-1/2 animate-pulse rounded bg-gray-100"></div>
-						</div>
+						<div class="flex flex-1 flex-col gap-1.5"><div class="h-3 w-3/4 animate-pulse rounded bg-gray-200"></div><div class="h-2.5 w-1/2 animate-pulse rounded bg-gray-100"></div></div>
 					</div>
 				{/each}
 			{:else if filtered.length === 0}
 				<div class="flex flex-col items-center justify-center gap-2 py-16">
 					<p class="text-center text-xs text-gray-400">{searchQuery ? 'Tidak ada hasil' : 'Belum ada percakapan'}</p>
-					{#if !searchQuery}
-						<button on:click={() => (showNewChat = true)} class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70">Mulai chat baru</button>
-					{/if}
+					{#if !searchQuery}<button on:click={() => (showNewChat = true)} class="text-xs font-semibold text-[#0d0f1e] underline underline-offset-2 transition-opacity hover:opacity-70">Mulai chat baru</button>{/if}
 				</div>
 			{:else}
 				{#each filtered as conv (conv.id)}
@@ -560,28 +524,39 @@
 	</aside>
 
 	<!-- AREA CHAT -->
-	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto {mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}">
+	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
+		{mobileView === 'sidebar' ? 'hidden md:flex' : mobileView === 'groupinfo' ? 'hidden' : 'flex'}">
 		{#if activeConversation}
 			<!-- Header mobile -->
 			<div class="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-white px-4 py-3 md:hidden" style="padding-top: max(12px, env(safe-area-inset-top))">
-				<button on:click={backToSidebar} aria-label="Kembali" class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100">
-					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-					</svg>
+				<button on:click={backToSidebar} class="-ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
 				</button>
+				<!-- Avatar grup bisa diklik untuk buka info grup -->
 				{#if activeConversation.isGroup}
-					<GroupAvatar members={activeConversation.members ?? []} size="sm" />
+					<button on:click={() => (mobileView = 'groupinfo')} class="shrink-0">
+						{#if activeConversation.groupAvatar}
+							<img src={activeConversation.groupAvatar} alt="grup" class="h-8 w-8 rounded-full object-cover" />
+						{:else}
+							<GroupAvatar members={activeConversation.members ?? []} size="sm" />
+						{/if}
+					</button>
 				{:else}
 					<Avatar name={activeConversation.name} src={activeConversation.otherAvatar ?? null} size="sm" online={onlineUserIds.has(Number(activeConversation?.otherUserId))} />
 				{/if}
-				<div>
-					<p class="text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
+				<div class="flex-1 min-w-0">
 					{#if activeConversation.isGroup}
-						<p class="text-xs text-gray-400">{(activeConversation.members ?? []).length} anggota</p>
-					{:else if onlineUserIds.has(Number(activeConversation?.otherUserId))}
-						<p class="text-xs font-medium text-emerald-500">Online</p>
-					{:else if activeLastSeen}
-						<p class="text-xs text-gray-400">{formatLastSeen(activeLastSeen)}</p>
+						<button on:click={() => (mobileView = 'groupinfo')} class="text-left">
+							<p class="truncate text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
+							<p class="text-xs text-gray-400">{(activeConversation.members ?? []).length} anggota · ketuk untuk info</p>
+						</button>
+					{:else}
+						<p class="truncate text-sm font-semibold text-[#0d0f1e]">{activeConversation.name}</p>
+						{#if onlineUserIds.has(Number(activeConversation?.otherUserId))}
+							<p class="text-xs font-medium text-emerald-500">Online</p>
+						{:else if activeLastSeen}
+							<p class="text-xs text-gray-400">{formatLastSeen(activeLastSeen)}</p>
+						{/if}
 					{/if}
 				</div>
 			</div>
@@ -596,19 +571,38 @@
 				on:newmessage={handleNewMessage}
 				on:requestmessages={handleRequestMessages}
 				on:messagesread={handleMessagesRead}
+				on:groupUpdated={handleGroupUpdated}
+				on:left={handleLeft}
 			/>
 		{:else}
 			<div class="hidden flex-1 flex-col items-center justify-center gap-3 px-8 text-center md:flex">
 				<div class="mb-2 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-					<svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-					</svg>
+					<svg class="h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
 				</div>
 				<p class="text-sm font-semibold text-gray-500">Pilih percakapan</p>
 				<p class="max-w-xs text-xs text-gray-400">Pilih percakapan di kiri atau tekan <span class="font-semibold text-[#0d0f1e]">+</span> untuk mulai chat baru.</p>
 			</div>
 		{/if}
 	</main>
+
+	<!-- Panel info grup mobile (full screen, hanya di HP) -->
+	{#if mobileView === 'groupinfo' && activeConversation?.isGroup}
+		<div class="flex w-full flex-col md:hidden">
+			<GroupInfoPanel
+				conversation={activeConversation}
+				{currentUserId}
+				on:close={() => (mobileView = 'chat')}
+				on:updated={handleGroupUpdated}
+				on:memberRemoved={(e) => {
+					activeConversation = { ...activeConversation, members: (activeConversation.members ?? []).filter((m) => m.id !== e.detail.userId) };
+					handleGroupUpdated({ detail: activeConversation });
+					mobileView = 'chat';
+				}}
+				on:left={() => { handleLeft(); }}
+			/>
+		</div>
+	{/if}
+
 </div>
 
 <ToastContainer />

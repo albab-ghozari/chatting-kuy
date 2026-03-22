@@ -26,8 +26,11 @@
 	let sending = false;
 
 	// Dipanggil dari parent (+page.svelte) lewat bind:this
+	// loadingMessages di-set false di sini — bukan di handleConversationChange
+	// supaya skeleton tetap tampil sampai data benar-benar tiba
 	export function setMessages(msgs, shouldMarkRead = true) {
 		messages = msgs ?? [];
+		loadingMessages = false;
 		if (shouldMarkRead && conversation?.id && currentUserId) {
 			emitMarkRead(conversation.id, currentUserId);
 		}
@@ -41,10 +44,10 @@
 	async function handleConversationChange() {
 		messages = [];
 		isTyping = false;
-		loadingMessages = true;
+		loadingMessages = true; // tetap true sampai setMessages dipanggil
 		await tick();
 		dispatch('requestmessages', { conversationId: conversation.id });
-		loadingMessages = false;
+		// TIDAK reset loadingMessages di sini — biarkan setMessages yang melakukannya
 	}
 
 	function handleReceiveMessage(msg) {
@@ -133,11 +136,9 @@
 				senderId: currentUserId,
 				conversationId: conversation.id
 			});
-			// Juga persist ke DB lewat REST (fallback keandalan)
 			await messageApi.send(conversation.id, content);
 		} catch (err) {
 			console.error('send error:', err);
-			// Hapus optimistic message kalau gagal
 			messages = messages.filter((m) => m.id !== optimisticId);
 		} finally {
 			sending = false;
@@ -161,7 +162,6 @@
 		return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 	}
 
-	// Kelompokkan pesan berdasarkan tanggal
 	$: groupedMessages = (() => {
 		const groups = [];
 		let lastDate = null;
@@ -203,17 +203,18 @@
 	class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4"
 >
 	{#if loadingMessages}
-		<!-- Skeleton loading -->
-		{#each { length: 5 } as _, i (i)}
+		<!-- Skeleton: tampil selama data belum datang -->
+		{#each { length: 6 } as _, i (i)}
 			<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
 				<div
-					class="h-10 w-[55%] animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0
-						? 'rounded-br-sm'
-						: 'rounded-bl-sm'}"
+					class="animate-pulse rounded-2xl bg-gray-200
+					{i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'}
+					{i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"
 				></div>
 			</div>
 		{/each}
 	{:else if messages.length === 0}
+		<!-- Empty state: hanya tampil kalau sudah selesai loading dan memang kosong -->
 		<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
 				<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

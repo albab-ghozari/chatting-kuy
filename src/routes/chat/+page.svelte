@@ -186,6 +186,7 @@
 			onlineUserIds.delete(id);
 			onlineUserIds = new SvelteSet(onlineUserIds);
 		});
+		await onSocketEvent('group_joined', handleGroupJoined);
 		await onSocketEvent('online_users', ({ userIds }) => { onlineUserIds = new SvelteSet([...onlineUserIds, ...userIds.map(Number)]); });
 
 		let storedConvs = [];
@@ -254,6 +255,7 @@
 		await offSocketEvent('new_user', handleNewUser);
 		await offSocketEvent('user_online');
 		await offSocketEvent('user_offline');
+		await offSocketEvent('group_joined', handleGroupJoined);
 		await offSocketEvent('online_users');
 		disconnectSocket();
 	});
@@ -338,6 +340,21 @@
 	async function handleNewUser(user) {
 		if (Number(user.id) === Number(currentUser?.id)) return;
 		allUsers = [...allUsers.filter((u) => u.id !== user.id), user];
+	}
+
+	async function handleGroupJoined(data) {
+		notify({
+			title: data.groupName,
+			message: data.message,
+			onClickCb: () => selectConversationById(data.conversationId)
+		})
+		// Auto reload conversations to show new group
+		await loadConversations(true)
+	}
+
+	async function selectConversationById(convId) {
+		const conv = conversations.find(c => Number(c.id) === Number(convId))
+		if (conv) selectConversation(conv)
 	}
 
 	async function handleRequestMessages(e) {

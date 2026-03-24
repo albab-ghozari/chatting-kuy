@@ -353,12 +353,19 @@
 		} catch (err) { console.error('fetch messages error:', err); }
 	}
 
-	function handleMessagesRead(e) {
-		const { conversationId } = e.detail;
+	function handleMessagesRead({ conversationId, readBy }) {
+		if (readBy === currentUser?.id) return; // Ignore own read events
+		
 		messagesCache.update((cache) => {
 			if (!cache[conversationId]) return cache;
-			return { ...cache, [conversationId]: cache[conversationId].map((m) => Number(m.sender?.id) === Number(currentUser?.id) ? { ...m, isRead: true } : m) };
+			return { ...cache, [conversationId]: cache[conversationId].map((m) => {
+				if (Number(m.sender?.id) === Number(currentUser?.id) && Number(m.conversationId) === Number(conversationId)) {
+					return { ...m, isRead: true };
+				}
+				return m;
+			}) };
 		});
+		dispatch('messagesread', { conversationId }); // Keep for ChatWindow
 	}
 
 	let searchTimeout;

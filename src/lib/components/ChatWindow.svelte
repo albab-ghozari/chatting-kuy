@@ -82,8 +82,9 @@
 		isTyping = false;
 	}
 
-	function handleMarkRead({ conversationId }) {
+	function handleMarkRead({ conversationId, readBy }) {
 		if (Number(conversationId) !== Number(localConversation?.id)) return;
+		if (readBy === currentUserId) return; // Ignore own read
 		dispatch('messagesread', { conversationId });
 	}
 

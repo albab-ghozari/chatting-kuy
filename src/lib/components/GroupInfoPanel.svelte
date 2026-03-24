@@ -12,9 +12,39 @@
 	let nameInput = '';
 	let saving = false;
 	let error = '';
+	let addingMember = null;
 
 	$: isAdmin = (conversation?.members ?? []).find((m) => m.id === currentUserId)?.role === 'admin';
 	$: nameInput = conversation?.name ?? '';
+
+	// ── SEARCH MEMBERS ────────────────────────────
+	let memberSearchQuery = '';
+	let memberSearchResults = [];
+	let searchingMembers = false;
+	let searchTimeout;
+
+	$:{memberSearchQuery; debounceSearch();}
+	
+	function debounceSearch() {
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(async () => {
+			if (!memberSearchQuery.trim() || !isAdmin) {
+				memberSearchResults = [];
+				return;
+			}
+			searchingMembers = true;
+			try {
+				const results = await conversationApi.searchUsers(memberSearchQuery);
+				// Filter users already in group
+				const currentMemberIds = new Set(conversation?.members?.map(m => m.id) ?? []);
+				memberSearchResults = results.filter(u => !currentMemberIds.has(u.id));
+			} catch (e) {
+				error = e.message;
+			} finally {
+				searchingMembers = false;
+			}
+		}, 300);
+	}
 
 	// ── Ganti foto grup ────────────────────────────
 	function pickAvatar() {
@@ -63,6 +93,25 @@
 		saveGroup({ groupName: trimmed });
 	}
 
+	// ── Tambah anggota ──────────────────────────────
+	async function addMember(userId) {
+		if (addingMember || !isAdmin) return;
+		addingMember = userId;
+		try {
+			const result = await conversationApi.addMember(conversation.id, userId);
+			// Update local members (optimistic)
+			const newMember = { id: userId, username: result.user.username, avatar: result.user.avatar ?? null, role: 'member' };
+			const updatedMembers = [...(conversation?.members ?? []), newMember];
+			dispatch('updated', { id: conversation.id, members: updatedMembers });
+			memberSearchQuery = '';
+			memberSearchResults = [];
+		} catch (e) {
+			error = e.message;
+		} finally {
+			addingMember = null;
+		}
+	}
+
 	// ── Keluarkan anggota ────────────────────────────
 	let removingId = null;
 	async function removeMember(memberId) {
@@ -102,8 +151,8 @@
 			</svg>
 		</button>
 		<p class="text-sm font-semibold text-[#0d0f1e]">Info Grup</p>
-		{#if saving}
-			<span class="ml-auto text-xs text-gray-400">Menyimpan...</span>
+		{#if saving || searchingMembers}
+			<span class="ml-auto text-xs text-gray-400">{saving ? 'Menyimpan...' : 'Mencari...'}</span>
 		{/if}
 	</div>
 
@@ -137,7 +186,7 @@
 				{/if}
 			</div>
 
-			<!-- Tombol hapus foto (tampil hanya jika ada foto dan admin) -->
+			<!-- Tombol hapus foto -->
 			{#if isAdmin && conversation?.groupAvatar}
 				<button
 					on:click={removeAvatar}
@@ -185,8 +234,8 @@
 		</div>
 
 		<!-- Daftar anggota -->
-		<div class="px-4 pb-6">
-			<p class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Anggota</p>
+		<div class="px-4 pb-4">
+			<p class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Anggota ({(conversation?.members ?? []).length})</p>
 			<div class="flex flex-col gap-0.5">
 				{#each (conversation?.members ?? []) as member (member.id)}
 					<div class="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-gray-50">
@@ -212,6 +261,47 @@
 				{/each}
 			</div>
 		</div>
+
+		<!-- TAMBAH ANGGOTA (Admin Only) -->
+		{#if isAdmin}
+		<div class="border-t border-gray-100 px-4 pb-4 pt-2">
+			<p class="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Tambah Anggota</p>
+			<div class="relative">
+				<svg class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+				</svg>
+				<input 
+					bind:value={memberSearchQuery}
+					placeholder="Cari username untuk ditambahkan..."
+					class="w-full rounded-xl bg-gray-50 py-2.5 pl-9 pr-4 text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-[#0d0f1e]/20 focus:outline-none"
+					disabled={addingMember}
+				/>
+			</div>
+			{#if searchingMembers}
+				<p class="mt-2 text-center text-xs text-gray-400">Mencari...</p>
+			{:else if memberSearchResults.length === 0 && memberSearchQuery}
+				<p class="mt-2 text-center text-xs text-gray-400">User tidak ditemukan</p>
+			{:else if memberSearchResults.length > 0}
+				<div class="mt-2 flex flex-col gap-0.5 max-h-48 overflow-y-auto">
+					{#each memberSearchResults as user (user.id)}
+						<button 
+							on:click={() => addMember(user.id)}
+							disabled={addingMember === user.id}
+							class="flex items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50"
+						>
+							<Avatar name={user.username} src={user.avatar ?? null} size="sm" />
+							<span class="flex-1 text-sm font-medium text-[#0d0f1e]">{user.username}</span>
+							{#if addingMember === user.id}
+								<span class="text-xs text-emerald-500">Menambahkan...</span>
+							{:else}
+								<span class="rounded-lg bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Tambah</span>
+							{/if}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		{/if}
 	</div>
 
 	<!-- Tombol keluar grup -->

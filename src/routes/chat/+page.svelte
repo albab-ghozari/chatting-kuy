@@ -595,6 +595,7 @@
 					handleGroupUpdated({ detail: activeConversation });
 					mobileView = 'chat';
 				}}
+				on:updated={handleGroupUpdated}
 				on:left={handleLeft}
 			/>
 		</div>

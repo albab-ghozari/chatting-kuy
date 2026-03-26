@@ -24,12 +24,17 @@
 	let sending = false;
 	let showGroupInfo = false;
 
+	// Simpan map optimisticId -> timestamp untuk matching yang lebih akurat
+	let optimisticTimestamps = {};
+
 	let localConversation = null;
 	$: localConversation = conversation;
 
 	export function setMessages(msgs, shouldMarkRead = true) {
 		messages = msgs ?? [];
 		loadingMessages = false;
+		// [M5 FIX] Bersihkan optimistic timestamps saat messages di-replace dari server
+		optimisticTimestamps = {};
 		if (shouldMarkRead && localConversation?.id && currentUserId) {
 			emitMarkRead(localConversation.id, currentUserId);
 		}
@@ -40,6 +45,7 @@
 
 	async function handleConversationChange() {
 		messages = [];
+		optimisticTimestamps = {};
 		isTyping = false;
 		loadingMessages = true;
 		showGroupInfo = false;
@@ -50,13 +56,23 @@
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(localConversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
+
 		const isImage = typeof msg.content === 'string' && msg.content.startsWith('[image]');
-		const optIdx = messages.findIndex(
-			(m) =>
-				typeof m.id === 'string' &&
-				m.id.startsWith('opt-') &&
-				(isImage ? m.content === msg.content : m.content === msg.content)
-		);
+
+		// [M4 FIX] Untuk foto: cocokkan optimistic pakai createdAt timestamp (bukan content)
+		// Untuk teks: cocokkan pakai content (lebih spesifik)
+		const optIdx = messages.findIndex((m) => {
+			if (!(typeof m.id === 'string' && m.id.startsWith('opt-'))) return false;
+			if (isImage) {
+				// Cocokkan berdasar senderId + conversationId (content base64 sama)
+				return Number(m.sender?.id) === Number(msg.sender?.id) &&
+					   Number(m.conversationId) === Number(msg.conversationId) &&
+					   m.content === msg.content;
+			}
+			return m.content === msg.content &&
+				   Number(m.sender?.id) === Number(msg.sender?.id);
+		});
+
 		if (optIdx !== -1) {
 			messages = messages.map((m, i) => (i === optIdx ? msg : m));
 		} else {
@@ -86,7 +102,7 @@
 
 	function handleMarkRead({ conversationId, readBy }) {
 		if (Number(conversationId) !== Number(localConversation?.id)) return;
-		if (readBy === currentUserId) return; // Ignore own read
+		if (readBy === currentUserId) return;
 		dispatch('messagesread', { conversationId });
 	}
 
@@ -116,7 +132,6 @@
 	async function handleSend(e) {
 		const { content } = e.detail;
 		if (!content || !localConversation?.id || sending) return;
-		// Validasi teks: harus ada isi setelah trim. Foto boleh tanpa trim
 		const isImage = content.startsWith('[image]');
 		if (!isImage && !content.trim()) return;
 
@@ -157,8 +172,7 @@
 	}
 
 	function formatDateHeader(dateStr) {
-		const d = new Date(dateStr),
-			now = new Date();
+		const d = new Date(dateStr), now = new Date();
 		const diffDays = Math.floor((now - d) / 86400000);
 		if (diffDays === 0) return 'Hari ini';
 		if (diffDays === 1) return 'Kemarin';
@@ -168,8 +182,7 @@
 
 	function formatLastSeen(isoStr) {
 		if (!isoStr) return '';
-		const d = new Date(isoStr),
-			now = new Date();
+		const d = new Date(isoStr), now = new Date();
 		const diffMin = Math.floor((now - d) / 60000);
 		const diffHour = Math.floor((now - d) / 3600000);
 		const diffDay = Math.floor((now - d) / 86400000);
@@ -212,43 +225,23 @@
 <div class="flex flex-1 overflow-hidden">
 	<div class="flex flex-1 flex-col overflow-hidden">
 		<!-- Header desktop -->
-		<div
-			class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex"
-		>
+		<div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 			{#if localConversation}
 				{#if localConversation.isGroup}
-					<button
-						on:click={() => (showGroupInfo = !showGroupInfo)}
-						class="shrink-0 transition-opacity hover:opacity-80"
-					>
+					<button on:click={() => (showGroupInfo = !showGroupInfo)} class="shrink-0 transition-opacity hover:opacity-80">
 						{#if localConversation.groupAvatar}
-							<img
-								src={localConversation.groupAvatar}
-								alt="grup"
-								class="h-8 w-8 rounded-full object-cover"
-							/>
+							<img src={localConversation.groupAvatar} alt="grup" class="h-8 w-8 rounded-full object-cover" />
 						{:else}
 							<GroupAvatar members={localConversation.members ?? []} size="sm" />
 						{/if}
 					</button>
 				{:else}
-					<Avatar
-						name={localConversation.name}
-						src={localConversation.otherAvatar ?? null}
-						size="sm"
-						online={isOnline}
-					/>
+					<Avatar name={localConversation.name} src={localConversation.otherAvatar ?? null} size="sm" online={isOnline} />
 				{/if}
 				<div class="min-w-0 flex-1">
 					{#if localConversation.isGroup}
-						<button
-							on:click={() => (showGroupInfo = !showGroupInfo)}
-							class="truncate text-left text-sm font-semibold text-[#0d0f1e] hover:underline"
-							>{localConversation.name}</button
-						>
-						<p class="text-xs text-gray-400">
-							{(localConversation.members ?? []).length} anggota · klik untuk info
-						</p>
+						<button on:click={() => (showGroupInfo = !showGroupInfo)} class="truncate text-left text-sm font-semibold text-[#0d0f1e] hover:underline">{localConversation.name}</button>
+						<p class="text-xs text-gray-400">{(localConversation.members ?? []).length} anggota · klik untuk info</p>
 					{:else}
 						<p class="truncate text-sm font-semibold text-[#0d0f1e]">{localConversation.name}</p>
 						{#if isOnline}<p class="text-xs font-medium text-emerald-500">Online</p>
@@ -256,61 +249,28 @@
 					{/if}
 				</div>
 				{#if localConversation.isGroup}
-					<button
-						aria-label="Info Grup"
-						on:click={() => (showGroupInfo = !showGroupInfo)}
-						class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 {showGroupInfo
-							? 'bg-gray-100 text-[#0d0f1e]'
-							: ''}"
-					>
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-							><path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-							/></svg
-						>
+					<button aria-label="Info Grup" on:click={() => (showGroupInfo = !showGroupInfo)} class="flex h-8 w-8 items-center justify-center rounded-xl text-gray-400 hover:bg-gray-100 {showGroupInfo ? 'bg-gray-100 text-[#0d0f1e]' : ''}">
+						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 					</button>
 				{/if}
 			{/if}
 		</div>
 
 		<!-- Messages -->
-		<div
-			bind:this={messagesContainer}
-			class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4 pb-2"
-		>
+		<div bind:this={messagesContainer} class="flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-4 pb-2">
 			{#if loadingMessages}
 				{#each { length: 6 } as _, i (i)}
 					<div class="flex items-end gap-2 {i % 2 === 0 ? 'flex-row-reverse' : ''}">
-						<div
-							class="animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0
-								? 'rounded-br-sm'
-								: 'rounded-bl-sm'} {i % 3 === 0
-								? 'h-10 w-[60%]'
-								: i % 3 === 1
-									? 'h-8 w-[40%]'
-									: 'h-12 w-[50%]'}"
-						></div>
+						<div class="animate-pulse rounded-2xl bg-gray-200 {i % 2 === 0 ? 'rounded-br-sm' : 'rounded-bl-sm'} {i % 3 === 0 ? 'h-10 w-[60%]' : i % 3 === 1 ? 'h-8 w-[40%]' : 'h-12 w-[50%]'}"></div>
 					</div>
 				{/each}
 			{:else if messages.length === 0 && !isTyping}
 				<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 					<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100">
-						<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-							><path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="1.5"
-								d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-							/></svg
-						>
+						<svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
 					</div>
 					<p class="text-sm text-gray-400">Belum ada pesan</p>
-					<p class="text-xs text-gray-300">
-						Kirim pesan pertama ke {localConversation?.name ?? 'teman'}!
-					</p>
+					<p class="text-xs text-gray-300">Kirim pesan pertama ke {localConversation?.name ?? 'teman'}!</p>
 				</div>
 			{:else}
 				{#each groupedMessages as item (item.type === 'date' ? item.key : item.msg.id)}
@@ -321,30 +281,16 @@
 							<div class="h-px flex-1 bg-gray-100"></div>
 						</div>
 					{:else}
-						<MessageBubble
-							message={item.msg}
-							{currentUserId}
-							animate={true}
-							isGroup={localConversation.isGroup ?? false}
-						/>
+						<MessageBubble message={item.msg} {currentUserId} animate={true} isGroup={localConversation.isGroup ?? false} />
 					{/if}
 				{/each}
 			{/if}
 			{#if isTyping}
 				<div class="flex shrink-0 items-end gap-2 pt-1">
 					<div class="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-gray-100 px-4 py-3">
-						<span
-							class="h-2 w-2 animate-bounce rounded-full bg-gray-400"
-							style="animation-delay:0ms"
-						></span>
-						<span
-							class="h-2 w-2 animate-bounce rounded-full bg-gray-400"
-							style="animation-delay:150ms"
-						></span>
-						<span
-							class="h-2 w-2 animate-bounce rounded-full bg-gray-400"
-							style="animation-delay:300ms"
-						></span>
+						<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:0ms"></span>
+						<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:150ms"></span>
+						<span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" style="animation-delay:300ms"></span>
 					</div>
 				</div>
 			{/if}

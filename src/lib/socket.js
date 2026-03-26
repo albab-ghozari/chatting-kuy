@@ -2,7 +2,7 @@
 import { browser } from '$app/environment'
 
 let _socket = null
-let _userId = null  // simpan userId untuk reconnect otomatis
+let _userId = null
 
 async function getSocket() {
    if (!browser) return null
@@ -28,7 +28,6 @@ async function getSocket() {
             _socket.emit('join', _userId)
             console.log('🔁 re-join userId:', _userId)
          }
-         // Dispatch event custom agar +page.svelte tahu socket reconnect
          if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('socket-reconnected'))
          }
@@ -41,13 +40,11 @@ async function getSocket() {
 }
 
 export async function connectSocket(userId) {
-   _userId = userId  // simpan untuk reconnect
+   _userId = userId
    const s = await getSocket()
    if (!s) return
-
    if (!s.connected) {
       s.connect()
-      // on('connect') di atas akan handle emit join
    } else {
       s.emit('join', userId)
    }
@@ -91,7 +88,8 @@ export async function emitStopTyping(conversationId, userId) {
 
 export async function disconnectSocket() {
    _userId = null
-   const s = await getSocket()
+   const s = _socket  // [M1 FIX] ambil referensi dulu
+   _socket = null     // [M1 FIX] reset ke null agar getSocket() buat instance baru saat login lagi
    if (s?.connected) s.disconnect()
 }
 
@@ -101,7 +99,6 @@ export async function emitMarkRead(conversationId, userId) {
    s.emit('mark_read', { conversationId, userId })
 }
 
-/** Cek apakah socket sudah connected */
 export async function isSocketConnected() {
    const s = await getSocket()
    return s?.connected ?? false

@@ -133,9 +133,11 @@
 
 		if (!isFromMe && (!isActiveConv || !document.hasFocus())) {
 			const conv = conversations.find((c) => Number(c.id) === convId);
+			// [B4 FIX] Tampilkan "📷 Foto" di notif jika pesan adalah gambar
+			const isImage = typeof msg.content === 'string' && msg.content.startsWith('[image]');
 			notify({
 				senderName: conv?.isGroup ? `${msg.sender?.username} @ ${conv.name}` : (msg.sender?.username ?? 'Pesan baru'),
-				message: msg.content,
+				message: isImage ? '📷 Foto' : msg.content,
 				avatar: conv?.otherAvatar ?? null,
 				onClickCb: () => { if (conv) selectConversation(conv); }
 			});
@@ -342,19 +344,19 @@
 		allUsers = [...allUsers.filter((u) => u.id !== user.id), user];
 	}
 
+	// [B2 FIX] Gunakan senderName (bukan title) agar notify tampil benar
 	async function handleGroupJoined(data) {
 		notify({
-			title: data.groupName,
-			message: data.message,
+			senderName: data.groupName ?? 'Grup Baru',
+			message: data.message ?? 'Kamu ditambahkan ke grup',
 			onClickCb: () => selectConversationById(data.conversationId)
-		})
-		// Auto reload conversations to show new group
-		await loadConversations(true)
+		});
+		await loadConversations(true);
 	}
 
 	async function selectConversationById(convId) {
-		const conv = conversations.find(c => Number(c.id) === Number(convId))
-		if (conv) selectConversation(conv)
+		const conv = conversations.find(c => Number(c.id) === Number(convId));
+		if (conv) selectConversation(conv);
 	}
 
 	async function handleRequestMessages(e) {
@@ -370,13 +372,14 @@
 		} catch (err) { console.error('fetch messages error:', err); }
 	}
 
-	function handleMessagesRead({ conversationId, readBy }) {
-		if (readBy === currentUser?.id) return;
-		
+	// [B1 FIX] Destructure dari e.detail bukan langsung parameter
+	function handleMessagesRead(e) {
+		const { conversationId, readBy } = e.detail ?? e;
+		if (Number(readBy) === Number(currentUser?.id)) return;
 		messagesCache.update((cache) => {
 			if (!cache[conversationId]) return cache;
 			return { ...cache, [conversationId]: cache[conversationId].map((m) => {
-				if (Number(m.sender?.id) === Number(currentUser?.id) && Number(m.conversationId) === Number(conversationId)) {
+				if (Number(m.sender?.id) === Number(currentUser?.id)) {
 					return { ...m, isRead: true };
 				}
 				return m;
@@ -544,7 +547,7 @@
 		</div>
 	</aside>
 
-	<!-- Area chat: selalu ada di desktop, di mobile hanya saat mobileView === 'chat' -->
+	<!-- Area chat -->
 	<main class="flex w-full min-w-0 flex-1 flex-col overflow-hidden md:w-auto
 		{mobileView === 'chat' ? 'flex' : 'hidden md:flex'}">
 		{#if activeConversation}
@@ -605,26 +608,26 @@
 		{/if}
 	</main>
 
-	<!-- Panel info grup mobile — fullscreen, hanya di mobile -->
+	<!-- Panel info grup mobile -->
 	{#if mobileView === 'groupinfo' && activeConversation?.isGroup}
 		<div class="flex w-full flex-1 flex-col overflow-hidden md:hidden">
 			<GroupInfoPanel
 				conversation={activeConversation}
 				currentUserId={currentUser?.id}
 				on:close={() => (mobileView = 'chat')}
-	on:memberRemoved={(e) => {
-		const userId = e.detail.userId;
-		if (activeConversation?.members) {
-			activeConversation = { ...activeConversation, members: activeConversation.members.filter(m => m.id !== userId) };
-		}
-		conversations = conversations.map(c => 
-			Number(c.id) === Number(activeConversation?.id)
-				? { ...c, members: c.members.filter(m => m.id !== userId) }
-				: c
-		);
-		conversationsStore.set(conversations);
-		mobileView = 'chat';
-	}}
+				on:memberRemoved={(e) => {
+					const userId = e.detail.userId;
+					if (activeConversation?.members) {
+						activeConversation = { ...activeConversation, members: activeConversation.members.filter(m => m.id !== userId) };
+					}
+					conversations = conversations.map(c =>
+						Number(c.id) === Number(activeConversation?.id)
+							? { ...c, members: (c.members ?? []).filter(m => m.id !== userId) }
+							: c
+					);
+					conversationsStore.set(conversations);
+					mobileView = 'chat';
+				}}
 				on:updated={handleGroupUpdated}
 				on:left={handleLeft}
 			/>

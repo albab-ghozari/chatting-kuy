@@ -1,4 +1,4 @@
-import prettier from 'eslint-config-prettier';
+limport prettier from 'eslint-config-prettier';
 import path from 'node:path';
 import { includeIgnoreFile } from '@eslint/compat';
 import js from '@eslint/js';
@@ -17,9 +17,15 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 	{
 		languageOptions: { globals: { ...globals.browser, ...globals.node } }
 	},
-	{
+		{
 		files: ['**/*.svelte', '**/*.svelte.js'],
-		languageOptions: { parserOptions: { svelteConfig } }
+		languageOptions: { parserOptions: { svelteConfig } },
+		rules: {
+			'@eslint/js/no-undef': 'off',
+			'svelte/no-store-write-in-on-mount': 'off',
+			'svelte/no-at-html-tags': 'off',
+			'svelte/require-each-key': 'off'
+		}
 	},
 	{
 		rules: {

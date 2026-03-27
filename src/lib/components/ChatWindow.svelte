@@ -24,28 +24,50 @@
 	let sending = false;
 	let showGroupInfo = false;
 
-	// Simpan map optimisticId -> timestamp untuk matching yang lebih akurat
-	let optimisticTimestamps = {};
+	/**
+	 * BUG #2 FIX — Optimistic message matching yang efisien
+	 *
+	 * Masalah sebelumnya:
+	 *   Matching optimistic message dilakukan dengan m.content === msg.content
+	 *   Untuk foto (base64), content bisa ratusan ribu karakter.
+	 *   Perbandingan string panjang ini diulang untuk SETIAP pesan di array
+	 *   setiap kali socket receive_message tiba → freeze UI.
+	 *
+	 * Solusi:
+	 *   Simpan Map<contentHash, optimisticId> saat kirim pesan.
+	 *   contentHash = 8 karakter pertama + panjang string (unik, ringan, O(1)).
+	 *   Saat pesan balik dari server, hitung hash yang sama → lookup O(1) di Map.
+	 *   Tidak perlu loop + perbandingan string panjang sama sekali.
+	 */
+	let optimisticMap = new Map(); // contentHash -> optimisticId
 
-	let localConversation = null;
-	$: localConversation = conversation;
+	function makeContentHash(content) {
+		// Hash ringan: 8 char pertama + 8 char terakhir + panjang
+		// Cukup unik untuk distinguish pesan dalam satu percakapan
+		const len = content.length;
+		const head = content.slice(0, 8);
+		const tail = content.slice(-8);
+		return `${head}${tail}${len}`;
+	}
 
 	export function setMessages(msgs, shouldMarkRead = true) {
 		messages = msgs ?? [];
 		loadingMessages = false;
-		// [M5 FIX] Bersihkan optimistic timestamps saat messages di-replace dari server
-		optimisticTimestamps = {};
+		optimisticMap.clear(); // bersihkan saat messages di-replace dari server
 		if (shouldMarkRead && localConversation?.id && currentUserId) {
 			emitMarkRead(localConversation.id, currentUserId);
 		}
 		scrollToBottom();
 	}
 
+	let localConversation = null;
+	$: localConversation = conversation;
+
 	$: if (conversation?.id) handleConversationChange();
 
 	async function handleConversationChange() {
 		messages = [];
-		optimisticTimestamps = {};
+		optimisticMap.clear();
 		isTyping = false;
 		loadingMessages = true;
 		showGroupInfo = false;
@@ -57,27 +79,19 @@
 		if (Number(msg.conversationId) !== Number(localConversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
 
-		const isImage = typeof msg.content === 'string' && msg.content.startsWith('[image]');
+		// Cek apakah ini reply dari pesan optimistic kita
+		const hash = makeContentHash(msg.content);
+		const optimisticId = optimisticMap.get(hash);
 
-		// [M4 FIX] Untuk foto: cocokkan optimistic pakai createdAt timestamp (bukan content)
-		// Untuk teks: cocokkan pakai content (lebih spesifik)
-		const optIdx = messages.findIndex((m) => {
-			if (!(typeof m.id === 'string' && m.id.startsWith('opt-'))) return false;
-			if (isImage) {
-				// Cocokkan berdasar senderId + conversationId (content base64 sama)
-				return Number(m.sender?.id) === Number(msg.sender?.id) &&
-					   Number(m.conversationId) === Number(msg.conversationId) &&
-					   m.content === msg.content;
-			}
-			return m.content === msg.content &&
-				   Number(m.sender?.id) === Number(msg.sender?.id);
-		});
-
-		if (optIdx !== -1) {
-			messages = messages.map((m, i) => (i === optIdx ? msg : m));
+		if (optimisticId) {
+			// Ganti optimistic message dengan pesan asli dari server — O(1) lookup
+			optimisticMap.delete(hash);
+			messages = messages.map((m) => m.id === optimisticId ? msg : m);
 		} else {
+			// Pesan dari orang lain atau tidak ada optimistic yang cocok
 			messages = [...messages, msg];
 		}
+
 		dispatch('newmessage', msg);
 		if (Number(msg.sender?.id) !== Number(currentUserId)) {
 			emitMarkRead(localConversation.id, currentUserId);
@@ -100,9 +114,8 @@
 		isTyping = false;
 	}
 
-	function handleMarkRead({ conversationId, readBy }) {
+	function handleMarkRead({ conversationId }) {
 		if (Number(conversationId) !== Number(localConversation?.id)) return;
-		if (readBy === currentUserId) return;
 		dispatch('messagesread', { conversationId });
 	}
 
@@ -127,6 +140,7 @@
 		await offSocketEvent('messages_read', handleMarkRead);
 		await offSocketEvent('group_updated', handleGroupUpdatedSocket);
 		clearTimeout(typingTimer);
+		optimisticMap.clear();
 	});
 
 	async function handleSend(e) {
@@ -137,6 +151,11 @@
 
 		sending = true;
 		const optimisticId = `opt-${Date.now()}`;
+
+		// Simpan hash → optimisticId untuk matching O(1) saat reply dari server
+		const hash = makeContentHash(content);
+		optimisticMap.set(hash, optimisticId);
+
 		const optimisticMsg = {
 			id: optimisticId,
 			content,
@@ -148,6 +167,7 @@
 		messages = [...messages, optimisticMsg];
 		dispatch('send', { content });
 		scrollToBottom();
+
 		try {
 			await sendSocketMessage({
 				content,
@@ -156,9 +176,12 @@
 			});
 		} catch (err) {
 			console.error('send error:', err);
+			// Fallback ke REST API
 			try {
 				await messageApi.send(localConversation.id, content);
 			} catch {
+				// Kirim gagal total — hapus optimistic message
+				optimisticMap.delete(hash);
 				messages = messages.filter((m) => m.id !== optimisticId);
 			}
 		} finally {
@@ -224,6 +247,7 @@
 
 <div class="flex flex-1 overflow-hidden">
 	<div class="flex flex-1 flex-col overflow-hidden">
+
 		<!-- Header desktop -->
 		<div class="hidden shrink-0 items-center gap-3 border-b border-gray-100 bg-white px-5 py-3 md:flex">
 			{#if localConversation}

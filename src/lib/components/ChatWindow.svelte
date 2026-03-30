@@ -24,26 +24,10 @@
 	let sending = false;
 	let showGroupInfo = false;
 
-	/**
-	 * BUG #2 FIX — Optimistic message matching yang efisien
-	 *
-	 * Masalah sebelumnya:
-	 *   Matching optimistic message dilakukan dengan m.content === msg.content
-	 *   Untuk foto (base64), content bisa ratusan ribu karakter.
-	 *   Perbandingan string panjang ini diulang untuk SETIAP pesan di array
-	 *   setiap kali socket receive_message tiba → freeze UI.
-	 *
-	 * Solusi:
-	 *   Simpan Map<contentHash, optimisticId> saat kirim pesan.
-	 *   contentHash = 8 karakter pertama + panjang string (unik, ringan, O(1)).
-	 *   Saat pesan balik dari server, hitung hash yang sama → lookup O(1) di Map.
-	 *   Tidak perlu loop + perbandingan string panjang sama sekali.
-	 */
-	let optimisticMap = new Map(); // contentHash -> optimisticId
+	// Bug #2 fix: O(1) optimistic matching via hash Map
+	let optimisticMap = new Map();
 
 	function makeContentHash(content) {
-		// Hash ringan: 8 char pertama + 8 char terakhir + panjang
-		// Cukup unik untuk distinguish pesan dalam satu percakapan
 		const len = content.length;
 		const head = content.slice(0, 8);
 		const tail = content.slice(-8);
@@ -53,7 +37,7 @@
 	export function setMessages(msgs, shouldMarkRead = true) {
 		messages = msgs ?? [];
 		loadingMessages = false;
-		optimisticMap.clear(); // bersihkan saat messages di-replace dari server
+		optimisticMap.clear();
 		if (shouldMarkRead && localConversation?.id && currentUserId) {
 			emitMarkRead(localConversation.id, currentUserId);
 		}
@@ -61,34 +45,58 @@
 	}
 
 	let localConversation = null;
-	$: localConversation = conversation;
 
-	$: if (conversation?.id) handleConversationChange();
+	/**
+	 * Bug #5 fix: handleConversationChange hanya dipanggil kalau conversation.id BENAR-BENAR berubah.
+	 *
+	 * Masalah sebelumnya:
+	 *   $: if (conversation?.id) handleConversationChange()
+	 *   Reactive ini re-run setiap kali referensi `conversation` berubah —
+	 *   termasuk saat handleGroupUpdated spread objek baru ({ ...activeConversation, ...updated })
+	 *   meskipun id-nya sama persis. Akibatnya pesan di-reset dan di-request ulang
+	 *   setiap kali nama/foto grup diubah.
+	 *
+	 * Solusi:
+	 *   Simpan lastConversationId secara terpisah.
+	 *   Bandingkan id sebelum memanggil handleConversationChange().
+	 *   localConversation tetap diupdate dari prop conversation untuk data terbaru
+	 *   (nama, foto, members), tapi tidak memicu reset pesan.
+	 */
+	let lastConversationId = null;
 
-	async function handleConversationChange() {
+	$: {
+		// Update localConversation SELALU agar header & panel info grup selalu sinkron
+		localConversation = conversation;
+
+		// Tapi hanya trigger handleConversationChange kalau ID-nya berbeda
+		const newId = conversation?.id ?? null;
+		if (newId && newId !== lastConversationId) {
+			lastConversationId = newId;
+			handleConversationChange(newId);
+		}
+	}
+
+	async function handleConversationChange(conversationId) {
 		messages = [];
 		optimisticMap.clear();
 		isTyping = false;
 		loadingMessages = true;
 		showGroupInfo = false;
 		await tick();
-		dispatch('requestmessages', { conversationId: conversation.id });
+		dispatch('requestmessages', { conversationId });
 	}
 
 	function handleReceiveMessage(msg) {
 		if (Number(msg.conversationId) !== Number(localConversation?.id)) return;
 		if (messages.find((m) => m.id === msg.id)) return;
 
-		// Cek apakah ini reply dari pesan optimistic kita
 		const hash = makeContentHash(msg.content);
 		const optimisticId = optimisticMap.get(hash);
 
 		if (optimisticId) {
-			// Ganti optimistic message dengan pesan asli dari server — O(1) lookup
 			optimisticMap.delete(hash);
 			messages = messages.map((m) => m.id === optimisticId ? msg : m);
 		} else {
-			// Pesan dari orang lain atau tidak ada optimistic yang cocok
 			messages = [...messages, msg];
 		}
 
@@ -121,6 +129,7 @@
 
 	function handleGroupUpdatedSocket(data) {
 		if (Number(data.id) !== Number(localConversation?.id)) return;
+		// Update localConversation langsung — tidak lewat prop agar tidak trigger reactive
 		localConversation = { ...localConversation, ...data };
 		dispatch('groupUpdated', localConversation);
 	}
@@ -141,6 +150,7 @@
 		await offSocketEvent('group_updated', handleGroupUpdatedSocket);
 		clearTimeout(typingTimer);
 		optimisticMap.clear();
+		lastConversationId = null;
 	});
 
 	async function handleSend(e) {
@@ -151,8 +161,6 @@
 
 		sending = true;
 		const optimisticId = `opt-${Date.now()}`;
-
-		// Simpan hash → optimisticId untuk matching O(1) saat reply dari server
 		const hash = makeContentHash(content);
 		optimisticMap.set(hash, optimisticId);
 
@@ -176,11 +184,9 @@
 			});
 		} catch (err) {
 			console.error('send error:', err);
-			// Fallback ke REST API
 			try {
 				await messageApi.send(localConversation.id, content);
 			} catch {
-				// Kirim gagal total — hapus optimistic message
 				optimisticMap.delete(hash);
 				messages = messages.filter((m) => m.id !== optimisticId);
 			}
